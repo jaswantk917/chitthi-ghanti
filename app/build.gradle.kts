@@ -20,15 +20,15 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
-    // same key as Hey re; it lives outside the repo
-    val releaseKeystore = providers.gradleProperty("HEYRE_KEYSTORE").orNull
+    // the Play upload key; Google holds the app signing key. Both live outside the repo
+    val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull
     signingConfigs {
-        if (releaseKeystore != null) {
+        if (uploadKeystore != null) {
             create("release") {
-                storeFile = file(releaseKeystore)
-                storePassword = providers.gradleProperty("HEYRE_KEYSTORE_PASSWORD").get()
-                keyAlias = providers.gradleProperty("HEYRE_KEY_ALIAS").get()
-                keyPassword = providers.gradleProperty("HEYRE_KEY_PASSWORD").get()
+                storeFile = file(uploadKeystore)
+                storePassword = providers.gradleProperty("CG_UPLOAD_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("CG_UPLOAD_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("CG_UPLOAD_KEY_PASSWORD").get()
             }
         }
     }
