@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti.signals
 
 import android.content.Context
+import android.app.role.RoleManager
 import android.provider.Telephony
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +31,8 @@ class Signals(private val context: Context) {
     /** everything that could explain a call right now */
     fun current(now: Long = System.currentTimeMillis()): List<Signal> = seen.value + fromSms(now)
 
-    private fun fromSms(now: Long): List<Signal> = try {
+    // Play: SMS is read only while this app is also the default SMS app (the Chitthi side)
+    private fun fromSms(now: Long): List<Signal> = if (!context.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_SMS)) emptyList() else try {
         context.contentResolver.query(
             Telephony.Sms.Inbox.CONTENT_URI,
             arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),

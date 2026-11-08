@@ -1,6 +1,11 @@
 package io.github.jaswantk917.chitthi.ui.welcome
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -57,7 +62,7 @@ private val shapes = listOf(
 )
 
 @Composable
-fun WelcomeScreen(onStart: () -> Unit) {
+fun WelcomeScreen(declined: Boolean, onStart: () -> Unit) {
     val haptics = rememberHaptics()
     var index by remember { mutableIntStateOf(0) }
     val progress = remember { Animatable(0f) }
@@ -109,6 +114,15 @@ fun WelcomeScreen(onStart: () -> Unit) {
             color = scheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+        AnimatedVisibility(declined, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Text(
+                "Chitthi works as your SMS app. Tap below and choose Chitthi; you can switch back any time in Settings.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+        }
         Spacer(Modifier.height(40.dp))
         Button(
             onClick = { haptics.play(Haptic.Success); onStart() },

@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DarkMode
@@ -58,6 +59,7 @@ fun SettingsSheet(
     onChange: ((Settings) -> Settings) -> Unit,
     onMakeDefault: () -> Unit,
     onAllowNotifications: () -> Unit,
+    onOpenBlocked: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val haptics = rememberHaptics()
@@ -95,6 +97,9 @@ fun SettingsSheet(
                 Switch(settings.screen.repeatCallers, enabled = settings.screen.silenceUnknown, onCheckedChange = { on ->
                     toggle(on); onChange { it.copy(screen = it.screen.copy(repeatCallers = on)) }
                 })
+            }
+            Section(Icons.Rounded.Block, "Blocked", "Numbers and rules, like every 140… telemarketer") {
+                TextButton(onClick = { haptics.play(Haptic.Tap); onOpenBlocked() }) { Text("Open") }
             }
             Section(Icons.Rounded.PaletteIcon, "Colours", "Messages blue, or Material You from your wallpaper") {}
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {

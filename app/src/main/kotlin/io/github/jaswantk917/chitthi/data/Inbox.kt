@@ -111,8 +111,9 @@ class Inbox(
 
     fun message(key: String): Message? = messages.firstOrNull { it.key == key }
 
+    // Play: SMS is read only while this is the default SMS app
     private fun hasPermission() =
-        app.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+        SmsStore.isDefault(app) && app.checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 
     private suspend fun reload(contactsToo: Boolean) = lock.withLock {
         if (!hasPermission()) {

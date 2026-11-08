@@ -17,9 +17,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-    <!-- scheduled messages: granted at install from 13 on; 10 to 12 need the older one -->
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- scheduled messages to the minute; Play keeps USE_EXACT_ALARM for alarm clocks, so users allow this one -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- the phone side (Ghanti) -->
@@ -89,15 +88,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- every app with RECEIVE_SMS gets this; used for OTP copy while not the default app -->
-        <receiver
-            android:name=".receive.SmsReceivedReceiver"
-            android:exported="true"
-            android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter android:priority="999">
-                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
-            </intent-filter>
-        </receiver>
 
         <receiver
             android:name=".receive.MmsPushReceiver"
@@ -127,6 +117,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 
@@ -157,6 +148,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <activity
+            android:name="io.github.jaswantk917.block.BlockedActivity"
+            android:exported="false"
+            android:label="Blocked" />
 
         <!-- the phone side: its own icon, and its own task so the two sides sit apart in recents -->
         <activity

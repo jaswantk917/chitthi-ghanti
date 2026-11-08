@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Palette as PaletteIcon
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -62,6 +63,7 @@ fun SettingsSheet(
     onMakeDefault: () -> Unit,
     /** how many old codes a choice would delete right now */
     countExpired: suspend (Int) -> Int,
+    onOpenBlocked: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val haptics = rememberHaptics()
@@ -139,6 +141,9 @@ fun SettingsSheet(
                     haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff)
                     onChange { it.copy(promoNotifications = on) }
                 })
+            }
+            Section(Icons.Rounded.Block, "Blocked", "Numbers, senders and words you never want to see") {
+                TextButton(onClick = { haptics.play(Haptic.Tap); onOpenBlocked() }) { Text("Open") }
             }
             Section(Icons.Rounded.BlurOn, "Blur under the bars", "Lists melt into the top and bottom edges. Heavy on some phones") {
                 Switch(settings.blur, onCheckedChange = { on ->

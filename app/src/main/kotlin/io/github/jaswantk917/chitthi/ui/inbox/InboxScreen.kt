@@ -116,7 +116,13 @@ import io.github.jaswantk917.chitthi.ui.util.shortTime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import io.github.jaswantk917.block.Applies
+import io.github.jaswantk917.block.RuleKind
+import io.github.jaswantk917.block.SystemBlocks
+import io.github.jaswantk917.chitthi.ChitthiApp
 
 interface InboxActions {
     fun open(conversation: Conversation)
@@ -655,6 +661,7 @@ private fun ConversationSheet(
     snackbar: SnackbarHostState,
 ) {
     val haptics = rememberHaptics()
+    val context = LocalContext.current
     // outlives the sheet, which leaves composition as it closes
     val scope = rememberCoroutineScope()
     ConversationActionsSheet(
@@ -673,6 +680,32 @@ private fun ConversationSheet(
                 } else {
                     haptics.play(Haptic.Error)
                     snackbar.showSnackbar("Make Chitthi your SMS app to delete")
+                }
+            }
+        },
+        blockLabel = when (conversation.sender.key.take(2)) {
+            "p:", "c:" -> "Block this number"
+            "h:" -> "Block this sender"
+            else -> null
+        },
+        onBlock = {
+            scope.launch {
+                val sender = conversation.sender
+                val header = sender.key.removePrefix("h:")
+                val number = sender.replyAddresses.firstOrNull()
+                val done = if (sender.key.startsWith("h:")) {
+                    // every carrier prefix and route of this company, e.g. AX-AMAZON-S and JD-AMAZON-P
+                    ChitthiApp.instance.blocks.add(RuleKind.SenderId, "*-$header*", Applies.Sms)
+                    true
+                } else {
+                    number != null && withContext(Dispatchers.IO) { SystemBlocks.block(context, number) }
+                }
+                if (done) {
+                    haptics.play(Haptic.ToggleOn)
+                    snackbar.showSnackbar("Blocked. Nothing new from them will reach you")
+                } else {
+                    haptics.play(Haptic.Error)
+                    snackbar.showSnackbar("Make Chitthi your SMS app to block numbers")
                 }
             }
         },

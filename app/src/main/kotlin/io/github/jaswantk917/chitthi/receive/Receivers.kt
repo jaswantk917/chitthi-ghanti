@@ -16,6 +16,9 @@ import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import io.github.jaswantk917.block.BlockRules
+import io.github.jaswantk917.block.BlockedSms
+import io.github.jaswantk917.block.isSaved
 import io.github.jaswantk917.chitthi.ChitthiApp
 import io.github.jaswantk917.chitthi.classify.Otp
 import io.github.jaswantk917.chitthi.data.SmsStore
@@ -76,22 +79,15 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val body = parts.joinToString("") { it.displayMessageBody ?: it.messageBody.orEmpty() }
         val subId = intent.getIntExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX, SubscriptionManager.getDefaultSmsSubscriptionId())
         async {
+            // a rule's catch stays out of the inbox and makes no sound, but is kept on the Blocked screen
+            val blocks = ChitthiApp.instance.blocks
+            BlockRules.forSms(blocks.rules.value, address, body, isSaved(context, address))?.let { rule ->
+                blocks.keep(BlockedSms(address, body, first.timestampMillis, subId, rule.id))
+                return@async
+            }
             val row = SmsStore.insertIncoming(context, address, body, first.timestampMillis, subId) ?: return@async
             Arrival.handle(context, "s${ContentUris.parseId(row)}")
         }
-    }
-}
-
-/** Everyone with RECEIVE_SMS gets this. While another app is the default, Chitthi still copies codes. */
-class SmsReceivedReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        if (SmsStore.isDefault(context)) return
-        if (!ChitthiApp.instance.prefs.settings.value.otpAutoCopy) return
-        val body = Telephony.Sms.Intents.getMessagesFromIntent(intent)?.filterNotNull().orEmpty()
-            .joinToString("") { it.displayMessageBody ?: it.messageBody.orEmpty() }
-        val code = Otp.extract(body) ?: return
-        Clipboard.copyOtp(context, code)
-        Toast.makeText(context, "Copied OTP $code", Toast.LENGTH_SHORT).show()
     }
 }
 

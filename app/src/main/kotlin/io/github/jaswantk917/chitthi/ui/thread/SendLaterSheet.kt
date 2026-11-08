@@ -1,5 +1,17 @@
 package io.github.jaswantk917.chitthi.ui.thread
 
+import android.app.AlarmManager
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -87,6 +99,7 @@ fun SendLaterSheet(title: String, onPick: (Long) -> Unit, onDismiss: () -> Unit)
         Step.Presets -> ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 20.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmallEmphasized, modifier = Modifier.padding(start = 4.dp, bottom = 16.dp))
+                ExactTiming()
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     presets.forEachIndexed { i, preset ->
                         SheetRow(
@@ -221,6 +234,46 @@ internal fun SheetRow(
                 Spacer(Modifier.height(2.dp))
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+/**
+ * Android leaves exact alarms off for apps that aren't alarm clocks, so a scheduled message could
+ * go out a few minutes late. One tap fixes it; the row goes away once it's allowed.
+ */
+@Composable
+private fun ExactTiming() {
+    val context = LocalContext.current
+    val haptics = rememberHaptics()
+    val alarms = remember { context.getSystemService(AlarmManager::class.java) }
+    var exact by remember { mutableStateOf(alarms.canScheduleExactAlarms()) }
+    LifecycleResumeEffect(Unit) {
+        exact = alarms.canScheduleExactAlarms()
+        onPauseOrDispose {}
+    }
+    AnimatedVisibility(!exact, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        Row(
+            Modifier
+                .padding(bottom = 12.dp)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.tertiaryContainer)
+                .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Send to the minute", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                Text(
+                    "Without this, Android may send it a few minutes late",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+            TextButton(onClick = {
+                haptics.play(Haptic.Tap)
+                context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
+            }) { Text("Allow") }
         }
     }
 }

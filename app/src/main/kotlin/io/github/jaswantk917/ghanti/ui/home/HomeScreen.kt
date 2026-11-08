@@ -146,6 +146,7 @@ interface HomeActions {
     fun call(number: String)
     fun message(number: String)
     fun copy(number: String)
+    fun block(number: String)
     fun addContact(number: String)
     fun openContact(id: Long)
     /** null: ask which number again */
@@ -620,7 +621,8 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
                     if (row.group.number.isNotBlank()) Action(Icons.Rounded.Sms, "Message") { actions.message(row.group.number) }
                     Action(Icons.Rounded.EditNote, "Note") { onMemo() }
                     if (row.name == null && row.group.number.isNotBlank()) Action(Icons.Rounded.PersonAdd, "Save") { actions.addContact(row.group.number) }
-                    if (row.group.number.isNotBlank()) Action(Icons.Rounded.ContentCopy, "Copy") { actions.copy(row.group.number) }
+                    // copying is a long press on the row, so this spot goes to blocking
+                    if (row.group.number.isNotBlank()) Action(Icons.Rounded.Block, "Block") { haptics.play(Haptic.ToggleOn); actions.block(row.group.number) }
                     Action(Icons.Rounded.Delete, "Remove") { haptics.play(Haptic.Delete); actions.delete(row) }
                 }
             }

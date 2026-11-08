@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import io.github.jaswantk917.block.BlockedActivity
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.provider.ContactsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
@@ -181,43 +183,59 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun hasSmsPermission() = checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+    /** Play allows SMS access only to the default SMS app, so being it comes before everything else */
+    private fun isSmsApp() = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_SMS)
+
+    private fun isReady() = isSmsApp() && checkSelfPermission(Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
 
     @Composable
     private fun Root() {
         val haptics = rememberHaptics()
-        var permitted by remember { mutableStateOf(hasSmsPermission()) }
+        var ready by remember { mutableStateOf(isReady()) }
+        var declined by remember { mutableStateOf(false) }
+        fun started() {
+            app.inbox.start()
+            app.inbox.refresh(contactsToo = true)
+        }
+        // the SMS role grants the SMS permissions itself; this asks for the rest
         val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            permitted = hasSmsPermission()
-            if (permitted) {
-                app.inbox.start()
-                app.inbox.refresh(contactsToo = true)
+            ready = isReady()
+            if (ready) started()
+        }
+        val rest = buildList {
+            add(Manifest.permission.READ_CONTACTS)
+            add(Manifest.permission.READ_PHONE_STATE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.toTypedArray()
+        val becomeSmsApp = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (isSmsApp()) {
+                haptics.play(Haptic.Success)
+                declined = false
+                permissions.launch(rest)
+            } else {
+                declined = true
             }
         }
-        val role = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) haptics.play(Haptic.Success)
-            app.inbox.refresh(contactsToo = true)
+        // switched away in Settings, or back: follow it either way
+        LifecycleResumeEffect(Unit) {
+            val now = isReady()
+            if (now != ready) {
+                ready = now
+                if (now) started()
+            }
+            onPauseOrDispose {}
         }
         val askForRole = {
             val roles = getSystemService(RoleManager::class.java)
             if (roles.isRoleAvailable(RoleManager.ROLE_SMS) && !roles.isRoleHeld(RoleManager.ROLE_SMS)) {
-                role.launch(roles.createRequestRoleIntent(RoleManager.ROLE_SMS))
+                becomeSmsApp.launch(roles.createRequestRoleIntent(RoleManager.ROLE_SMS))
             }
         }
-        if (!permitted) {
-            WelcomeScreen(onStart = {
-                permissions.launch(
-                    buildList {
-                        add(Manifest.permission.READ_SMS)
-                        add(Manifest.permission.RECEIVE_SMS)
-                        add(Manifest.permission.SEND_SMS)
-                        add(Manifest.permission.RECEIVE_MMS)
-                        add(Manifest.permission.READ_CONTACTS)
-                        add(Manifest.permission.READ_PHONE_STATE)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-                    }.toTypedArray()
-                )
-            })
+        if (!ready) {
+            WelcomeScreen(
+                declined = declined,
+                onStart = { if (isSmsApp()) permissions.launch(rest) else askForRole() },
+            )
             return
         }
         Screens(askForRole)
@@ -375,6 +393,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onMakeDefault = askForRole,
                 countExpired = { minutes -> withContext(Dispatchers.IO) { OtpSweepWorker.expired(context, minutes).size } },
+                onOpenBlocked = { startActivity(Intent(this@MainActivity, BlockedActivity::class.java)) },
                 onDismiss = { showSettings = false },
             )
         }

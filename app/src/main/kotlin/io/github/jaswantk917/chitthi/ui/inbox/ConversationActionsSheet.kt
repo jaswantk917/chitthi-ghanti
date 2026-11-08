@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.PushPin
@@ -47,6 +48,9 @@ fun ConversationActionsSheet(
     onMarkRead: () -> Unit,
     onMove: (Category) -> Unit,
     onDelete: () -> Unit,
+    /** null when there's nothing to block, like an RCS business chat */
+    blockLabel: String? = null,
+    onBlock: () -> Unit = {},
 ) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -102,6 +106,14 @@ fun ConversationActionsSheet(
                 modifier = Modifier.padding(top = 6.dp),
             )
             Spacer(Modifier.height(24.dp))
+            if (blockLabel != null) {
+                OutlinedButton(onClick = { haptics.play(Haptic.ToggleOn); close(onBlock) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Rounded.Block, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(blockLabel)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             OutlinedButton(
                 onClick = { close(onDelete) },
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),

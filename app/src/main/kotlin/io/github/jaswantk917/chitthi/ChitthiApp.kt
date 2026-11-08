@@ -1,6 +1,7 @@
 package io.github.jaswantk917.chitthi
 
 import android.app.Application
+import io.github.jaswantk917.block.BlockStore
 import io.github.jaswantk917.ghanti.GhantiApp
 import io.github.jaswantk917.chitthi.ai.Nano
 import io.github.jaswantk917.chitthi.data.Brands
@@ -13,6 +14,7 @@ class ChitthiApp : Application() {
     val prefs by lazy { Prefs(this) }
     val store by lazy { LocalStore(this) }
     val brands by lazy { Brands(assets.open("brands.json").bufferedReader().use { it.readText() }) }
+    val blocks by lazy { BlockStore(this) }
     val inbox by lazy { Inbox(this, store, brands, prefs, Nano()) }
 
     override fun onCreate() {

@@ -32,12 +32,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.lifecycleScope
+import io.github.jaswantk917.block.BlockedActivity
+import io.github.jaswantk917.block.SystemBlocks
 import io.github.jaswantk917.ghanti.data.Home
 import io.github.jaswantk917.ghanti.data.RecentRow
 import io.github.jaswantk917.ghanti.data.Recents
 import io.github.jaswantk917.ghanti.signals.DeliveryListener
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.ui.home.ExpectingSheet
+import io.github.jaswantk917.ghanti.ui.home.GhantiWelcome
+import io.github.jaswantk917.ghanti.ui.util.Haptic
+import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.home.HomeActions
 import io.github.jaswantk917.ghanti.ui.home.HomeScreen
 import io.github.jaswantk917.ghanti.ui.home.KeypadSheet
@@ -73,8 +78,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        home.start()
         refreshSetup()
+        // Play: the call log is read only while this is the phone app
+        if (setup.isPhoneApp) home.start()
     }
 
     override fun onStop() {
@@ -106,6 +112,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun Root() {
+        val haptics = rememberHaptics()
         val state by home.state.collectAsState()
         val settings by app.prefs.settings.collectAsState()
         val signalTick by app.signals.changes.collectAsState()
@@ -119,22 +126,24 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        var declined by remember { mutableStateOf(false) }
+        // one after the other: the phone app role, then its permissions, then the caller ID role that decides which calls ring
+        val screeningRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { refreshSetup() }
         val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             home.start()
             pendingCall?.let { number -> pendingCall = null; if (canCall()) place(number) }
-        }
-        // two roles, asked one after the other: answering calls, then deciding which ring
-        val screeningRole = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { refreshSetup() }
-        val role = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            refreshSetup()
-            home.reload()
             if (setup.isPhoneApp && !setup.screensCalls) {
                 screeningRole.launch(getSystemService(RoleManager::class.java).createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING))
             }
         }
-        LaunchedEffect(Unit) {
-            val missing = wanted.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-            if (missing.isNotEmpty()) permissions.launch(missing.toTypedArray())
+        val role = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            refreshSetup()
+            declined = !setup.isPhoneApp
+            if (setup.isPhoneApp) {
+                haptics.play(Haptic.Success)
+                val missing = wanted.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+                if (missing.isNotEmpty()) permissions.launch(missing.toTypedArray()) else home.start()
+            }
         }
         LaunchedEffect(settings.screen.silenceUnknown) { refreshSetup() }
         val memos by app.memos.all.collectAsState()
@@ -150,6 +159,12 @@ class MainActivity : ComponentActivity() {
                 }
                 override fun message(number: String) {
                     startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number")))
+                }
+                override fun block(number: String) {
+                    lifecycleScope.launch {
+                        val done = withContext(Dispatchers.IO) { SystemBlocks.block(this@MainActivity, number) }
+                        Toast.makeText(this@MainActivity, if (done) "Blocked. Their calls and SMS won't reach you" else "Couldn't block this number", Toast.LENGTH_SHORT).show()
+                    }
                 }
                 override fun copy(number: String) {
                     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("number", number))
@@ -189,6 +204,10 @@ class MainActivity : ComponentActivity() {
         }
 
         val usual by app.prefs.usual.collectAsState()
+        if (!setup.isPhoneApp) {
+            GhantiWelcome(declined, onStart = { role.launch(getSystemService(RoleManager::class.java).createRequestRoleIntent(RoleManager.ROLE_DIALER)) })
+            return
+        }
         HomeScreen(state, setup, expecting, usual, actions)
 
         keypad?.let { initial ->
@@ -207,6 +226,7 @@ class MainActivity : ComponentActivity() {
                 onChange = app.prefs::update,
                 onMakeDefault = actions::makeDefault,
                 onAllowNotifications = ::openListenerSettings,
+                onOpenBlocked = { startActivity(Intent(this@MainActivity, BlockedActivity::class.java)) },
                 onDismiss = { settingsOpen = false },
             )
         }
@@ -240,7 +260,6 @@ class MainActivity : ComponentActivity() {
             add(Manifest.permission.WRITE_CALL_LOG)
             add(Manifest.permission.READ_CONTACTS)
             add(Manifest.permission.READ_PHONE_STATE)
-            add(Manifest.permission.READ_SMS)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
