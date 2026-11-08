@@ -1,0 +1,115 @@
+# Play Console: what to paste where
+
+Package: `io.github.jaswantk917.chitthighanti`
+Privacy policy: https://jaswantk917.github.io/chitthi-ghanti/privacy.html
+
+## Main store listing
+
+**App name** (30 max)
+
+```
+Chitthi & Ghanti: SMS + Calls
+```
+
+**Short description** (80 max)
+
+```
+SMS that sorts itself, calls that keep strangers quiet. All on your phone.
+```
+
+**Full description**
+
+```
+Two everyday apps in one install, each with its own icon on your home screen. Use either, or both.
+
+CHITTHI: MESSAGES THAT SORT THEMSELVES
+• OTPs, banks and deliveries up top. People in their own place. Promos out of the way.
+• The newest code is waiting at the top, and can be copied the moment it arrives.
+• Send later: hold send to schedule a message for tonight, tomorrow morning or any time.
+• Messages from people show as proper conversations, with photo, reply and bubble.
+• Smart replies and sorting help, on the phone itself, on phones that support it.
+
+GHANTI: CALLS THAT KNOW WHO'S CALLING
+• Numbers that aren't in your contacts ring quietly. They still show, so nothing is missed.
+• Waiting for an order or a ride? While a food, grocery, ride or courier app says it's on the way, strangers ring normally, and Ghanti tells you who it probably is.
+• Someone who calls twice in three minutes rings through. They probably mean it.
+• Confirm who called and Ghanti remembers it for that call. Write notes during a call.
+• Everything a phone app needs: keypad with search, hold, mute, speaker, merge, quick replies and favourites.
+
+BLOCKING FOR BOTH
+• Block a number and Android itself stops its calls and SMS.
+• Rules for the rest: numbers starting with 140 (telemarketing), promotional senders, words like "loan approved", or your own regex.
+• Saved contacts are never caught. Stopped messages wait for you instead of disappearing.
+
+PRIVATE BY DESIGN
+No account. No ads. No analytics. Your messages, calls and contacts never leave your phone.
+
+Chitthi needs to be your default SMS app, and Ghanti your default phone app. Switch back any time in Settings.
+```
+
+**Category:** Communication. **Tags:** Messaging, Phone & calls (pick the closest offered).
+
+## Data safety
+
+- Does your app collect or share any of the required user data types? **No**
+- (Everything else is skipped once you answer No.)
+
+## Sensitive permissions: SMS and Call Log
+
+Appears after the first bundle upload, under App content → Sensitive app permissions.
+
+- **Core functionality:**
+  - Default SMS handler.
+  - Default Phone handler.
+- **Description:**
+
+```
+Chitthi & Ghanti is an SMS app and a phone app in one install, each with its own launcher icon. The SMS side asks to become the default SMS handler before using any SMS permission, and uses them to show, sort, send, schedule and notify about messages. The phone side asks to become the default Phone handler before using call log or phone permissions, and uses them to show recent calls, place and answer calls through its own in-call screen, and screen calls. While the app is the default SMS handler, the phone side also reads recent SMS on the device to notice "out for delivery" messages, so a delivery rider's call can ring. If the user switches either role to another app, that side stops reading SMS or the call log and asks to become the default again. Nothing leaves the device.
+```
+
+- **Video:** link to the unlisted YouTube video (script below).
+
+## Foreground service: phone call
+
+- Type: **Phone call** (`FOREGROUND_SERVICE_PHONE_CALL`).
+- Description:
+
+```
+The in-call service runs in the foreground during a call to show the ongoing-call notification with hang up, and to keep the call controls working while the screen is off or another app is open. It starts when a call begins and stops when the call ends.
+```
+
+- What happens if it's deferred or stopped: `Calls in progress would lose their notification and controls.`
+- Video: the phone video below shows it.
+
+## Full-screen intent
+
+- Core functionality: **Calling: receiving calls**. The incoming-call screen shows over the lock screen.
+
+## Content rating answers
+
+- Category: Communication.
+- Shares location: No. Digital purchases: No.
+- Block users or content: **Yes**. Report users or content: No. Chat moderation: No.
+
+## Video scripts (screen record on the phone, upload as unlisted YouTube)
+
+**SMS video (about 60 s)**
+1. Open the blue Chitthi icon and tap Let's go. The "Set as default SMS app" dialog appears; choose it.
+2. Allow contacts and notifications.
+3. Show the inbox tabs and open a conversation.
+4. Send a message, then receive one (text yourself from another phone).
+5. Hold send and schedule a message.
+6. Long-press a chat and tap Block.
+
+**Phone video (about 60 s)**
+1. Open the green Ghanti icon and tap Let's go. The "Set as default phone app" dialog appears; choose it. Allow the Caller ID & spam app dialog.
+2. Show Recents (the call log) and place a call from the keypad. Show the in-call screen and the ongoing-call notification, then hang up.
+3. Receive a call from a number not in your contacts: it rings silently and the screen says "Ringing silently".
+4. Optional: with a delivery notification showing, a stranger's call rings and shows the delivery label.
+5. Open Settings → Blocked and add a "140" rule.
+
+## Release notes (first release)
+
+```
+First release: Chitthi for SMS and Ghanti for calls, in one app, with blocking for both.
+```
