@@ -11,11 +11,11 @@ android {
     compileSdkMinor = libs.versions.compileSdkMinor.get().toInt()
 
     defaultConfig {
-        applicationId = "io.github.jaswantk917.chitthi"
+        applicationId = "io.github.jaswantk917.chitthighanti"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 1
+        versionName = "1.0"
         // Gemini Nano phones are all arm64
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -38,6 +38,8 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             resValue("string", "app_name", "Chitthi debug")
+            resValue("string", "ghanti_name", "Ghanti debug")
+            resValue("string", "app_label", "Chitthi & Ghanti debug")
         }
         release {
             signingConfig = signingConfigs.findByName("release")
@@ -45,6 +47,8 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             resValue("string", "app_name", "Chitthi")
+            resValue("string", "ghanti_name", "Ghanti")
+            resValue("string", "app_label", "Chitthi & Ghanti")
         }
     }
 
