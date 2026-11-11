@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.6:
+
+```
+Merged calls show as one conference, with everyone's faces and names, and you can drop someone or talk to them privately. The call screen moves with the call: shapes drift while it connects and gather when it picks up, the face comes forward on speaker, and the background goes still when you mute or hold. Settings sheets slide smoothly.
+```
+
 1.4:
 
 ```
