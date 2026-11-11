@@ -1,5 +1,10 @@
 package io.github.jaswantk917.chitthi.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -151,19 +156,22 @@ fun SettingsSheet(
                     onChange { it.copy(blur = on) }
                 })
             }
-            Section(
-                Icons.Rounded.AutoAwesome, "Gemini Nano",
-                when (nanoStatus) {
-                    NanoStatus.Ready -> "On this phone: re-sorts unsure messages, names unknown senders, suggests replies"
-                    NanoStatus.Downloading -> "Getting the model ready; sorting uses rules meanwhile"
-                    NanoStatus.Checking -> "Checking this phone…"
-                    NanoStatus.Unavailable -> "Not available on this phone; sorting uses rules"
-                },
+            // only phones that have it see it; a row that can't be switched on is just noise
+            AnimatedVisibility(
+                nanoStatus == NanoStatus.Ready || nanoStatus == NanoStatus.Downloading,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
             ) {
-                Switch(settings.useNano, enabled = nanoStatus != NanoStatus.Unavailable, onCheckedChange = { on ->
-                    haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff)
-                    onChange { it.copy(useNano = on) }
-                })
+                Section(
+                    Icons.Rounded.AutoAwesome, "Gemini Nano",
+                    if (nanoStatus == NanoStatus.Ready) "On this phone: re-sorts unsure messages, names unknown senders, suggests replies"
+                    else "Getting the model ready; sorting uses rules meanwhile",
+                ) {
+                    Switch(settings.useNano, onCheckedChange = { on ->
+                        haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff)
+                        onChange { it.copy(useNano = on) }
+                    })
+                }
             }
             Spacer(Modifier.height(12.dp))
             Text(
