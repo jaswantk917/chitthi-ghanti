@@ -101,6 +101,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
@@ -108,6 +109,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -174,7 +177,9 @@ fun InCallScreen(
     // back closes the keypad before it leaves the call screen
     BackHandler(enabled = keypad) { keypad = false }
 
+    var face by remember { mutableStateOf(Offset.Unspecified) }
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
+        Drifting(connecting = call.phase == Phase.Dialing && !ended, target = face, modifier = Modifier.fillMaxSize())
         // the face gives up room on short screens and when a note can show; not tied to the keypad,
         // or the face grows for a frame when the keypad hides the note, then shrinks away
         val backdrop by animateDpAsState(
@@ -201,7 +206,10 @@ fun InCallScreen(
                     val speaker = audio?.route == CallAudioState.ROUTE_SPEAKER && !ended
                     // on speaker the phone is away from your face: the face comes forward to be read from there
                     val zoom by animateFloatAsState(if (speaker) 1.12f else 1f, spring(dampingRatio = 0.55f, stiffness = 260f), label = "zoom")
-                    Box(Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }, contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }.onGloballyPositioned { face = it.boundsInRoot().center },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         LivingBackdrop(
                             ringing = call.phase == Phase.Ringing && !ended,
                             connecting = call.phase == Phase.Dialing && !ended,
@@ -490,8 +498,8 @@ private fun NoteEntry(note: String, onClick: () -> Unit, modifier: Modifier = Mo
 }
 
 /**
- * A slow, breathing shape behind the face; ripples go out while it rings. While a call connects,
- * a few small shapes drift around it and gather into it once the other side picks up. On speaker
+ * A slow, breathing shape behind the face; ripples go out while it rings, and it swells softly as
+ * the connecting shapes ([Drifting]) land in it. On speaker
  * it opens into a sunburst, muted it stops breathing, on hold it also stops turning and dims.
  */
 @Composable
@@ -520,10 +528,6 @@ private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean,
         if (connecting) gather.snapTo(0f) else gather.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 90f))
     }
     val shape = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Sunny) }
-    val drifters = remember {
-        listOf(MaterialShapes.Clover4Leaf, MaterialShapes.Pill, MaterialShapes.Cookie4Sided).map { Morph(it, it) }
-    }
-    val drifterColors = listOf(scheme.tertiaryContainer, scheme.secondaryContainer, scheme.primaryContainer)
     val path = remember { Path() }
     val matrix = remember { Matrix() }
     Canvas(Modifier.size(size)) {
@@ -540,24 +544,6 @@ private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean,
             }
         }
         val g = gather.value
-        if (g < 1f) {
-            drifters.forEachIndexed { i, morph ->
-                // each on its own slow, wandering orbit; on connect they slide into the middle and melt
-                val t = clock * (0.35f + 0.12f * i) + i * 2.1f
-                val reach = side * (0.38f + 0.06f * sin(clock * 0.6f + i * 1.7f)) * (1f - g)
-                val at = center + Offset(cos(t) * reach, sin(t * 1.3f) * reach * 0.85f)
-                val piece = side * 0.16f * (1f - g * 0.7f)
-                path.rewind()
-                morph.toPath(0f, path)
-                matrix.reset()
-                matrix.translate(at.x - piece / 2f, at.y - piece / 2f)
-                matrix.scale(piece, piece)
-                path.transform(matrix)
-                rotate(clock * 40f * (if (i % 2 == 0) 1f else -1f), at) {
-                    drawPath(path, drifterColors[i].copy(alpha = 0.9f * (1f - g)))
-                }
-            }
-        }
         // a soft swell as the drifters land
         val swell = 1f + 0.07f * sin(g * PI.toFloat()) + 0.03f * breath * sin(clock * 2f * PI.toFloat() / 6.4f)
         path.rewind()
@@ -568,6 +554,63 @@ private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean,
         matrix.scale(blob, blob)
         path.transform(matrix)
         rotate(clock * 15f, center) { drawPath(path, scheme.primaryContainer.copy(alpha = dim)) }
+    }
+}
+
+/**
+ * While a call connects: a few big, soft shapes wander slowly behind everything, half off the
+ * edges, like a phone's setup screens. When the other side picks up they shrink, slide into the
+ * face at [target] and melt into its backdrop.
+ */
+@Composable
+private fun Drifting(connecting: Boolean, target: Offset, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val gather = remember { Animatable(if (connecting) 0f else 1f) }
+    LaunchedEffect(connecting) {
+        if (connecting) gather.snapTo(0f) else gather.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 60f))
+    }
+    if (gather.value >= 1f) return
+    var clock by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now ->
+                clock += (now - last) / 1e9f
+                last = now
+            }
+        }
+    }
+    val shapes = remember {
+        listOf(MaterialShapes.Cookie9Sided, MaterialShapes.Clover4Leaf, MaterialShapes.SoftBurst, MaterialShapes.Pill).map { Morph(it, it) }
+    }
+    val colors = listOf(scheme.primaryContainer, scheme.tertiaryContainer, scheme.secondaryContainer, scheme.primaryContainer)
+    val path = remember { Path() }
+    val matrix = remember { Matrix() }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    Canvas(modifier.onGloballyPositioned { origin = it.boundsInRoot().topLeft }) {
+        val w = size.width
+        val h = size.height
+        val g = gather.value
+        val home = if (target.isSpecified) target - origin else Offset(w / 2f, h * 0.3f)
+        shapes.forEachIndexed { i, morph ->
+            // each on its own slow loop across the screen, never in step with the others
+            val t = clock * (0.05f + 0.013f * i) + i * 1.6f
+            val wander = Offset(
+                w * (0.5f + 0.48f * sin(t * 2.1f + i)),
+                h * (0.5f + 0.42f * cos(t * 1.7f + i * 2.3f)),
+            )
+            val at = wander + (home - wander) * g
+            val piece = w * (0.62f + 0.14f * (i % 2)) * (1f - 0.85f * g)
+            path.rewind()
+            morph.toPath(0f, path)
+            matrix.reset()
+            matrix.translate(at.x - piece / 2f, at.y - piece / 2f)
+            matrix.scale(piece, piece)
+            path.transform(matrix)
+            rotate(clock * (6f + 2f * i) * (if (i % 2 == 0) 1f else -1f), at) {
+                drawPath(path, colors[i].copy(alpha = 0.45f * (1f - g)))
+            }
+        }
     }
 }
 
