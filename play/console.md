@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.4:
+
+```
+Ghanti's keypad understands phone codes: *#06# shows your IMEI, and *#*#…#*#* opens hidden test menus like *#*#4636#*#*.
+```
+
 1.2:
 
 ```

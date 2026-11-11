@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import io.github.jaswantk917.ghanti.data.Contact
 import io.github.jaswantk917.ghanti.data.Kind
 import io.github.jaswantk917.ghanti.data.RecentRow
+import io.github.jaswantk917.ghanti.data.SpecialCode
 import io.github.jaswantk917.ghanti.data.T9
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.ui.components.Avatar
@@ -59,7 +60,14 @@ import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 private data class Match(val name: String?, val number: String, val photo: android.net.Uri?, val score: Int)
 
 @Composable
-fun KeypadSheet(initial: String, contacts: List<Contact>, recents: List<RecentRow>, onCall: (String) -> Unit, onDismiss: () -> Unit) {
+fun KeypadSheet(
+    initial: String,
+    contacts: List<Contact>,
+    recents: List<RecentRow>,
+    onCall: (String) -> Unit,
+    onSpecial: (SpecialCode) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val haptics = rememberHaptics()
     val context = LocalContext.current
     var typed by rememberSaveable { mutableStateOf(initial) }
@@ -119,7 +127,15 @@ fun KeypadSheet(initial: String, contacts: List<Contact>, recents: List<RecentRo
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Dialpad(onKey = { typed += it })
+            Dialpad(onKey = { key ->
+                typed += key
+                // codes act the moment the last key lands, only from keys pressed here: a number arriving from a link or the clipboard never fires one
+                SpecialCode.parse(typed)?.let { code ->
+                    haptics.play(Haptic.Arrive)
+                    typed = ""
+                    onSpecial(code)
+                }
+            })
             Spacer(Modifier.height(20.dp))
             val interaction = remember { MutableInteractionSource() }
             Box(

@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationManager
 import android.app.role.RoleManager
 import android.content.ClipData
@@ -15,6 +16,7 @@ import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.telecom.TelecomManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -38,6 +40,7 @@ import io.github.jaswantk917.block.SystemBlocks
 import io.github.jaswantk917.ghanti.data.Home
 import io.github.jaswantk917.ghanti.data.RecentRow
 import io.github.jaswantk917.ghanti.data.Recents
+import io.github.jaswantk917.ghanti.data.SpecialCode
 import io.github.jaswantk917.ghanti.signals.DeliveryListener
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.ui.home.ExpectingSheet
@@ -46,6 +49,7 @@ import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.home.HomeActions
 import io.github.jaswantk917.ghanti.ui.home.HomeScreen
+import io.github.jaswantk917.ghanti.ui.home.ImeiSheet
 import io.github.jaswantk917.ghanti.ui.home.KeypadSheet
 import io.github.jaswantk917.ghanti.ui.home.SettingsSheet
 import io.github.jaswantk917.ghanti.ui.home.Setup
@@ -63,6 +67,8 @@ class MainActivity : ComponentActivity() {
     private var keypad by mutableStateOf<String?>(null)
     private var setup by mutableStateOf(Setup(isPhoneApp = false, screensCalls = false, readsNotifications = false, silencing = true))
     private var pendingCall: String? = null
+    /** null: closed; otherwise what *#06# found */
+    private var imeis by mutableStateOf<List<String>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -225,6 +231,7 @@ class MainActivity : ComponentActivity() {
                 contacts = state.contacts,
                 recents = state.recents,
                 onCall = { number -> keypad = null; actions.call(number) },
+                onSpecial = ::special,
                 onDismiss = { keypad = null },
             )
         }
@@ -239,6 +246,7 @@ class MainActivity : ComponentActivity() {
                 onDismiss = { settingsOpen = false },
             )
         }
+        imeis?.let { found -> ImeiSheet(found, onCopy = actions::copy, onDismiss = { imeis = null }) }
         if (expectingOpen) {
             ExpectingSheet(expecting, setup, onAllowNotifications = ::openListenerSettings, onDismiss = { expectingOpen = false })
         }
@@ -251,6 +259,32 @@ class MainActivity : ComponentActivity() {
             getSystemService(TelecomManager::class.java).placeCall(Uri.fromParts("tel", number, null), Bundle())
         } catch (e: SecurityException) {
             Log.w(TAG, "can't place call", e)
+        }
+    }
+
+    private fun special(code: SpecialCode) {
+        keypad = null
+        when (code) {
+            // only the default phone app may send these; Android passes them to whoever listens
+            is SpecialCode.Secret -> runCatching { getSystemService(TelephonyManager::class.java).sendDialerSpecialCode(code.code) }
+                .onFailure { Log.w(TAG, "secret code refused", it) }
+            // without the SMS role Android won't share the IMEI, but About phone shows it
+            SpecialCode.Imei -> readImeis().let { found ->
+                if (found.isNotEmpty()) imeis = found else startActivity(Intent(Settings.ACTION_DEVICE_INFO_SETTINGS))
+            }
+        }
+    }
+
+    // Android lets the default SMS app read these, which this app is while Chitthi is the SMS app
+    @SuppressLint("MissingPermission", "HardwareIds")
+    private fun readImeis(): List<String> {
+        val telephony = getSystemService(TelephonyManager::class.java)
+        @Suppress("DEPRECATION")
+        val slots = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) telephony.activeModemCount else telephony.phoneCount
+        return try {
+            (0 until slots).mapNotNull { telephony.getImei(it)?.takeIf(String::isNotBlank) }
+        } catch (e: SecurityException) {
+            emptyList()
         }
     }
 

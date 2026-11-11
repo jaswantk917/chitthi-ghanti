@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -209,5 +210,40 @@ private fun seen(at: Long): String {
         minutes < 1 -> "just now"
         minutes < 60 -> "$minutes min ago"
         else -> "since " + clockTime(at)
+    }
+}
+
+/** what *#06# shows: one IMEI per SIM slot, each copied with a tap */
+@Composable
+fun ImeiSheet(imeis: List<String>, onCopy: (String) -> Unit, onDismiss: () -> Unit) {
+    val haptics = rememberHaptics()
+    val scheme = MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
+            Text("IMEI", style = MaterialTheme.typography.headlineMediumEmphasized)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (imeis.size > 1) "One for each SIM slot. Tap one to copy it." else "Tap it to copy it.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                imeis.forEachIndexed { i, imei ->
+                    val big = 20.dp
+                    val small = 4.dp
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(if (i == 0) big else small, if (i == 0) big else small, if (i == imeis.lastIndex) big else small, if (i == imeis.lastIndex) big else small))
+                            .background(scheme.surfaceContainerHigh)
+                            .clickable { haptics.play(Haptic.Copy); onCopy(imei) }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                    ) {
+                        if (imeis.size > 1) Text("SIM ${i + 1}", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+                        Text(imei, style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+            }
+        }
     }
 }
