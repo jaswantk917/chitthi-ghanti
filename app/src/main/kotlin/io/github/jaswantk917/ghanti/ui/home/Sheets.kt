@@ -175,7 +175,7 @@ fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: 
             Spacer(Modifier.height(6.dp))
             Text(
                 if (byBrand.isEmpty()) "Strangers ring silently. When an order or a ride is coming, their calls ring out loud."
-                else "Until these arrive, strangers ring out loud: it's probably the rider. Swipe one away once it's here.",
+                else "Until these arrive, strangers ring out loud: it's probably the rider.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = scheme.onSurfaceVariant,
             )
