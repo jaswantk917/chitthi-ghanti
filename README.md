@@ -40,19 +40,6 @@ Everything stays on your phone. No accounts, no ads, no tracking, no servers.
 
 Block a number and Android stops it before any app sees it. Rules catch the rest: `140` telemarketers, promotional senders, words, patterns. Your contacts are never caught.
 
-## Small things
-
-| Do this | And |
-|---|---|
-| Hold a tab | Mark it all read |
-| Hold a chat | Pin, move, block, delete |
-| Hold send | Send later |
-| Tap a face | Open the contact, or save the stranger |
-| Tap the delivery line in Ghanti | See what's on its way. Swipe one away once it's here |
-| Hold the speaker button | Pick Bluetooth, headphones or watch |
-| Hold a number on the call screen | Copy it |
-| Type `*#06#` | Your IMEI |
-
 <details>
 <summary><b>Permissions</b></summary>
 
