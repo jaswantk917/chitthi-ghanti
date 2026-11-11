@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -155,74 +154,79 @@ private fun Hub(sides: Sides, onOpen: (Side) -> Unit, onShow: (Side, Boolean) ->
     var askUninstall by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().background(scheme.surface).windowInsetsPadding(WindowInsets.safeDrawing)
-            .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
-        verticalArrangement = Arrangement.Center,
+            .verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
     ) {
+        // the same header as Chitthi's and Ghanti's: title, then one quiet line
         Arrive(0) {
-            Text("Tring", style = MaterialTheme.typography.displayMediumEmphasized)
+            Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+                Text("Tring", style = MaterialTheme.typography.displaySmallEmphasized, color = scheme.onSurface)
+                Text("Two apps, one install", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Arrive(1) {
-            Text(
-                "Two apps in one install. Each has its own icon on your home screen, so open them from there.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = scheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.height(28.dp))
-        Arrive(2) {
-            SideCard(
-                name = "Chitthi",
-                what = "Messages that sort themselves. Codes and banks up top, people in their own place, promos out of the way.",
-                ready = sides.sms,
-                shown = sides.chitthiShown,
-                readyLine = "Your SMS app",
-                setupLine = "Opens to make it your SMS app",
-                icon = R.drawable.ic_launcher_foreground,
-                colors = chitthiColors,
-                onClick = { onOpen(Side.Chitthi) },
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Arrive(3) {
-            SideCard(
-                name = "Ghanti",
-                what = "Calls that know who's calling. Strangers ring quietly, unless a delivery is on its way.",
-                ready = sides.phone,
-                shown = sides.ghantiShown,
-                readyLine = "Your phone app",
-                setupLine = "Opens to make it your phone app",
-                icon = R.drawable.ghanti_launcher_foreground,
-                colors = ghantiColors,
-                onClick = { onOpen(Side.Ghanti) },
-            )
-        }
-        Spacer(Modifier.height(28.dp))
-        Arrive(4) {
-            Column {
-                Text("App icons", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-                Column(Modifier.clip(RoundedCornerShape(24.dp)).background(scheme.surfaceContainer)) {
-                    Side.entries.forEach { side ->
-                        ShowRow(
-                            side = side,
-                            sides = sides,
-                            onShow = { on ->
-                                val other = if (side == Side.Chitthi) Side.Ghanti else Side.Chitthi
-                                if (!on && !sides.shown(other)) askUninstall = true else onShow(side, on)
-                            },
-                            onDefaultApps = onDefaultApps,
-                        )
+        Column(Modifier.padding(horizontal = 24.dp)) {
+            Spacer(Modifier.height(16.dp))
+            Arrive(1) {
+                Text(
+                    "Each has its own icon on your home screen, so open them from there.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Arrive(2) {
+                SideCard(
+                    name = "Chitthi",
+                    what = "Messages that sort themselves. Codes and banks up top, people in their own place, promos out of the way.",
+                    ready = sides.sms,
+                    shown = sides.chitthiShown,
+                    readyLine = "Your SMS app",
+                    setupLine = "Opens to make it your SMS app",
+                    icon = R.drawable.ic_launcher_foreground,
+                    colors = chitthiColors,
+                    onClick = { onOpen(Side.Chitthi) },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Arrive(3) {
+                SideCard(
+                    name = "Ghanti",
+                    what = "Calls that know who's calling. Strangers ring quietly, unless a delivery is on its way.",
+                    ready = sides.phone,
+                    shown = sides.ghantiShown,
+                    readyLine = "Your phone app",
+                    setupLine = "Opens to make it your phone app",
+                    icon = R.drawable.ghanti_launcher_foreground,
+                    colors = ghantiColors,
+                    onClick = { onOpen(Side.Ghanti) },
+                )
+            }
+            Spacer(Modifier.height(28.dp))
+            Arrive(4) {
+                Column {
+                    Text("App icons", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+                    Column(Modifier.clip(RoundedCornerShape(24.dp)).background(scheme.surfaceContainer)) {
+                        Side.entries.forEach { side ->
+                            ShowRow(
+                                side = side,
+                                sides = sides,
+                                onShow = { on ->
+                                    val other = if (side == Side.Chitthi) Side.Ghanti else Side.Chitthi
+                                    if (!on && !sides.shown(other)) askUninstall = true else onShow(side, on)
+                                },
+                                onDefaultApps = onDefaultApps,
+                            )
+                        }
                     }
                 }
             }
-        }
-        Spacer(Modifier.height(24.dp))
-        Arrive(5) {
-            Text(
-                "Blocking works for both: Settings → Blocked in either one. Nothing you send, receive or call leaves this phone.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurfaceVariant,
-            )
+            Spacer(Modifier.height(24.dp))
+            Arrive(5) {
+                Text(
+                    "Blocking works for both: Settings → Blocked in either one. Nothing you send, receive or call leaves this phone.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
         }
     }
     if (askUninstall) {
