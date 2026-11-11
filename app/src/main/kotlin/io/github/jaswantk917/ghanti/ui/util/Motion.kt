@@ -44,6 +44,13 @@ fun Modifier.edgeBlur(top: () -> Dp, bottom: Dp): Modifier = if (LocalBlur.curre
 /** whether the phone's GPU gets the progressive blur; see Settings.blur */
 val LocalBlur = staticCompositionLocalOf { false }
 
+/**
+ * The bottom band's blur, eased in: a straight climb from zero turned text soft within a few dp,
+ * which read as a line where the blur began. Cubic, so it stays faint for the first half and does
+ * its work near the edge, under the gesture bar.
+ */
+private val bottomEase = listOf(0.2f, 0.4f, 0.6f, 0.8f, 1f).map { f -> f to (24f * f * f * f).dp }
+
 private fun Modifier.progressiveBlur(top: () -> Dp, bottom: Dp) = blur {
     val height = size.height.value
     if (height > 0f) {
@@ -56,8 +63,7 @@ private fun Modifier.progressiveBlur(top: () -> Dp, bottom: Dp) = blur {
                 BlurStop(topEnd * 0.75f, 8.dp),
                 BlurStop(topEnd, 0.dp),
                 BlurStop(bottomStart, 0.dp),
-                BlurStop(1f, 24.dp),
-            )
+            ) + bottomEase.map { (f, radius) -> BlurStop(bottomStart + (1f - bottomStart) * f, radius) }
         )
     }
 }
