@@ -26,14 +26,20 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -47,22 +53,35 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import io.github.jaswantk917.chitthi.ChitthiApp
 import io.github.jaswantk917.chitthi.R
 import io.github.jaswantk917.chitthi.ui.theme.ChitthiTheme
 import io.github.jaswantk917.chitthi.ui.util.Haptic
+import io.github.jaswantk917.chitthi.ui.util.LocalBlur
+import io.github.jaswantk917.chitthi.ui.util.edgeBlur
 import io.github.jaswantk917.chitthi.ui.util.rememberHaptics
 import kotlinx.coroutines.delay
 import io.github.jaswantk917.chitthi.MainActivity as ChitthiActivity
@@ -79,7 +98,10 @@ class HubActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            ChitthiTheme {
+            // Chitthi's palette, black and blur settings, so the hub looks like the sides it leads to
+            val settings by (application as ChitthiApp).prefs.settings.collectAsState()
+            ChitthiTheme(settings.palette, settings.amoled) {
+                CompositionLocalProvider(LocalBlur provides settings.blur) {
                 Hub(
                     sides = sides,
                     onOpen = ::open,
@@ -87,6 +109,7 @@ class HubActivity : ComponentActivity() {
                     onDefaultApps = { startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) },
                     onUninstall = { startActivity(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", packageName, null))) },
                 )
+                }
             }
         }
     }
@@ -152,82 +175,107 @@ private val ghantiColors = listOf(Color(0xFF3DDC84), Color(0xFF0F9D58))
 private fun Hub(sides: Sides, onOpen: (Side) -> Unit, onShow: (Side, Boolean) -> Unit, onDefaultApps: () -> Unit, onUninstall: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     var askUninstall by remember { mutableStateOf(false) }
-    Column(
-        Modifier.fillMaxSize().background(scheme.surface).windowInsetsPadding(WindowInsets.safeDrawing)
-            .verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
-    ) {
-        // the same header as Chitthi's and Ghanti's: title, then one quiet line
-        Arrive(0) {
-            Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
-                Text("Tring", style = MaterialTheme.typography.displaySmallEmphasized, color = scheme.onSurface)
-                Text("Two apps, one install", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+    val density = LocalDensity.current
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var headerHeight by remember { mutableStateOf(96.dp) }
+    // the title tucks away as the page scrolls and comes back on the way up, as on both sides;
+    // driven by what the page actually scrolled, so a page that fits never leaves a gap
+    var titleHeight by remember { mutableFloatStateOf(0f) }
+    var collapse by remember { mutableFloatStateOf(0f) }
+    val collapser = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                collapse = (collapse - consumed.y).coerceIn(0f, titleHeight)
+                return Offset.Zero
             }
         }
-        Column(Modifier.padding(horizontal = 24.dp)) {
-            Spacer(Modifier.height(16.dp))
-            Arrive(1) {
-                Text(
-                    "Each has its own icon on your home screen, so open them from there.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-            Arrive(2) {
-                SideCard(
-                    name = "Chitthi",
-                    what = "Messages that sort themselves. Codes and banks up top, people in their own place, promos out of the way.",
-                    ready = sides.sms,
-                    shown = sides.chitthiShown,
-                    readyLine = "Your SMS app",
-                    setupLine = "Opens to make it your SMS app",
-                    icon = R.drawable.ic_launcher_foreground,
-                    colors = chitthiColors,
-                    onClick = { onOpen(Side.Chitthi) },
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Arrive(3) {
-                SideCard(
-                    name = "Ghanti",
-                    what = "Calls that know who's calling. Strangers ring quietly, unless a delivery is on its way.",
-                    ready = sides.phone,
-                    shown = sides.ghantiShown,
-                    readyLine = "Your phone app",
-                    setupLine = "Opens to make it your phone app",
-                    icon = R.drawable.ghanti_launcher_foreground,
-                    colors = ghantiColors,
-                    onClick = { onOpen(Side.Ghanti) },
-                )
-            }
-            Spacer(Modifier.height(28.dp))
-            Arrive(4) {
-                Column {
-                    Text("App icons", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-                    Column(Modifier.clip(RoundedCornerShape(24.dp)).background(scheme.surfaceContainer)) {
-                        Side.entries.forEach { side ->
-                            ShowRow(
-                                side = side,
-                                sides = sides,
-                                onShow = { on ->
-                                    val other = if (side == Side.Chitthi) Side.Ghanti else Side.Chitthi
-                                    if (!on && !sides.shown(other)) askUninstall = true else onShow(side, on)
-                                },
-                                onDefaultApps = onDefaultApps,
-                            )
+    }
+    Box(Modifier.fillMaxSize().background(scheme.surface).nestedScroll(collapser)) {
+        Column(
+            Modifier.fillMaxSize()
+                .edgeBlur(top = { headerHeight - with(density) { collapse.toDp() } }, bottom = navBottom + 24.dp)
+                .verticalScroll(rememberScrollState())
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                .padding(top = headerHeight + 4.dp, bottom = navBottom + 32.dp),
+        ) {
+            Column(Modifier.padding(horizontal = 24.dp)) {
+                Spacer(Modifier.height(16.dp))
+                Arrive(1) {
+                    Text(
+                        "Each has its own icon on your home screen, so open them from there.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(24.dp))
+                Arrive(2) {
+                    SideCard(
+                        name = "Chitthi",
+                        what = "Messages that sort themselves. Codes and banks up top, people in their own place, promos out of the way.",
+                        ready = sides.sms,
+                        shown = sides.chitthiShown,
+                        readyLine = "Your SMS app",
+                        setupLine = "Opens to make it your SMS app",
+                        icon = R.drawable.ic_launcher_foreground,
+                        colors = chitthiColors,
+                        onClick = { onOpen(Side.Chitthi) },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Arrive(3) {
+                    SideCard(
+                        name = "Ghanti",
+                        what = "Calls that know who's calling. Strangers ring quietly, unless a delivery is on its way.",
+                        ready = sides.phone,
+                        shown = sides.ghantiShown,
+                        readyLine = "Your phone app",
+                        setupLine = "Opens to make it your phone app",
+                        icon = R.drawable.ghanti_launcher_foreground,
+                        colors = ghantiColors,
+                        onClick = { onOpen(Side.Ghanti) },
+                    )
+                }
+                Spacer(Modifier.height(28.dp))
+                Arrive(4) {
+                    Column {
+                        Text("App icons", style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+                        Column(Modifier.clip(RoundedCornerShape(24.dp)).background(scheme.surfaceContainer)) {
+                            Side.entries.forEach { side ->
+                                ShowRow(
+                                    side = side,
+                                    sides = sides,
+                                    onShow = { on ->
+                                        val other = if (side == Side.Chitthi) Side.Ghanti else Side.Chitthi
+                                        if (!on && !sides.shown(other)) askUninstall = true else onShow(side, on)
+                                    },
+                                    onDefaultApps = onDefaultApps,
+                                )
+                            }
                         }
                     }
                 }
-            }
-            Spacer(Modifier.height(24.dp))
-            Arrive(5) {
-                Text(
-                    "Blocking works for both: Settings → Blocked in either one. Nothing you send, receive or call leaves this phone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.height(24.dp))
+                Arrive(5) {
+                    Text(
+                        "Blocking works for both: Settings → Blocked in either one. Nothing you send, receive or call leaves this phone.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
             }
         }
+            Header(
+                collapse = { collapse },
+                onTitleHeight = { titleHeight = it.toFloat() },
+                modifier = Modifier.onSizeChanged { headerHeight = with(density) { it.height.toDp() } },
+            )
+            // the page blurs right up under the clock; a soft fade keeps the clock readable
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .windowInsetsTopHeight(WindowInsets.statusBars)
+                    .background(Brush.verticalGradient(0f to scheme.surface.copy(alpha = 0.75f), 1f to scheme.surface.copy(alpha = 0f))),
+            )
     }
     if (askUninstall) {
         AlertDialog(
@@ -237,6 +285,39 @@ private fun Hub(sides: Sides, onOpen: (Side) -> Unit, onShow: (Side, Boolean) ->
             confirmButton = { TextButton(onClick = { askUninstall = false; onUninstall() }) { Text("Uninstall") } },
             dismissButton = { TextButton(onClick = { askUninstall = false }) { Text("Keep") } },
         )
+    }
+}
+
+/** Chitthi's and Ghanti's header: the title over a fading scrim, shrinking away as the page scrolls */
+@Composable
+private fun Header(collapse: () -> Float, onTitleHeight: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val surface = MaterialTheme.colorScheme.surface
+    Column(
+        modifier
+            .fillMaxWidth()
+            .graphicsLayer { translationY = -collapse() }
+            .background(Brush.verticalGradient(0f to surface.copy(alpha = 0.8f), 0.65f to surface.copy(alpha = 0.6f), 1f to surface.copy(alpha = 0f)))
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(bottom = 10.dp),
+    ) {
+        Arrive(0) {
+            Column(
+                Modifier
+                    .onSizeChanged { onTitleHeight(it.height) }
+                    .graphicsLayer {
+                        val p = if (size.height > 0f) collapse() / size.height else 0f
+                        alpha = 1f - p
+                        scaleX = 1f - 0.08f * p
+                        scaleY = 1f - 0.08f * p
+                        transformOrigin = TransformOrigin(0f, 1f)
+                    }
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 6.dp),
+            ) {
+                Text("Tring", style = MaterialTheme.typography.displaySmallEmphasized, color = MaterialTheme.colorScheme.onSurface)
+                Text("Two apps, one install", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 
