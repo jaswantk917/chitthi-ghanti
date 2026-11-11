@@ -3,6 +3,7 @@ package io.github.jaswantk917.ghanti.incall
 import android.content.Context
 import android.telecom.Call
 import android.telecom.CallAudioState
+import android.telecom.DisconnectCause
 import android.telecom.PhoneAccountHandle
 import android.telecom.VideoProfile
 import io.github.jaswantk917.ghanti.GhantiApp
@@ -79,6 +80,10 @@ object Calls {
         tracked.remove(call)
         if (tracked.isEmpty() && gone != null && gone.phase != Phase.Ringing) {
             _ended.value = Ended(conferenceNames[call] ?: gone.title, gone.connectedAt, System.currentTimeMillis())
+            // only when the last call goes (a merge closes the calls it swallows while the conference carries on),
+            // and not when you hung up yourself: the end button already gave its thud
+            val yours = call.details.disconnectCause?.code == DisconnectCause.LOCAL
+            if (gone.connectedAt > 0 && !yours) service?.let(CallBuzz::ended)
         }
         conferenceNames.remove(call)
         publish()
@@ -97,6 +102,7 @@ object Calls {
                 if (number != entry.value.first) entry.setValue(number to Contacts.lookup(context, number))
             }
         }
+        val before = _calls.value.associate { it.call to it.phase }
         val all = tracked.map { (call, known) -> describe(call, known.second) }
         val byCall = all.associateBy { it.call }
         // merged calls live inside their conference: Telecom keeps them as children, still "active",
@@ -109,6 +115,8 @@ object Calls {
             .filter { it.phase != Phase.Ended }
             // the call needing a decision first, then the live one
             .sortedBy { it.phase.ordinal }
+        // the other side picked up
+        if (_calls.value.any { before[it.call] == Phase.Dialing && it.phase == Phase.Active }) service?.let(CallBuzz::connected)
     }
 
     /** the one the main screen is about */

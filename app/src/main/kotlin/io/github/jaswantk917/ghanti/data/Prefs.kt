@@ -13,6 +13,8 @@ data class Settings(
     val blur: Boolean = Build.MANUFACTURER.equals("Google", ignoreCase = true),
     val palette: Palette = Palette.Ghanti,
     val amoled: Boolean = false,
+    /** a firm pulse when the other side picks up, a soft one when the call ends */
+    val callBuzz: Boolean = true,
 )
 
 class Prefs(context: Context) {
@@ -39,6 +41,7 @@ class Prefs(context: Context) {
         blur = prefs.getBoolean("blur", Settings().blur),
         palette = Palette.entries.firstOrNull { it.name == prefs.getString("palette", null) } ?: Palette.Ghanti,
         amoled = prefs.getBoolean("amoled", false),
+        callBuzz = prefs.getBoolean("call_buzz", true),
     )
 
     fun update(change: (Settings) -> Settings) {
@@ -50,6 +53,7 @@ class Prefs(context: Context) {
             .putBoolean("blur", next.blur)
             .putString("palette", next.palette.name)
             .putBoolean("amoled", next.amoled)
+            .putBoolean("call_buzz", next.callBuzz)
             .apply()
         state.value = next
     }

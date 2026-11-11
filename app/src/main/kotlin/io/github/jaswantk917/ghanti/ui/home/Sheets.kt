@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Palette as PaletteIcon
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Today
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
@@ -97,6 +98,9 @@ fun SettingsSheet(
                 Switch(settings.screen.repeatCallers, enabled = settings.screen.silenceUnknown, onCheckedChange = { on ->
                     toggle(on); onChange { it.copy(screen = it.screen.copy(repeatCallers = on)) }
                 })
+            }
+            Section(Icons.Rounded.Vibration, "Vibrate when calls connect and end", "A firm pulse when they pick up, a soft one when they hang up or the call drops. Felt with the phone at your ear") {
+                Switch(settings.callBuzz, onCheckedChange = { on -> toggle(on); onChange { it.copy(callBuzz = on) } })
             }
             Section(Icons.Rounded.Block, "Blocked", "Numbers and rules, like every 140… telemarketer") {
                 TextButton(onClick = { haptics.play(Haptic.Tap); onOpenBlocked() }) { Text("Open") }
