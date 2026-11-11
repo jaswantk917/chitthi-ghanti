@@ -1,5 +1,6 @@
 package io.github.jaswantk917.ghanti.ui.home
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -18,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeliveryDining
@@ -32,15 +35,23 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import io.github.jaswantk917.ghanti.data.Settings
@@ -52,6 +63,9 @@ import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.util.clockTime
 import io.github.jaswantk917.sheet.SheetColumn
+import kotlin.math.abs
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 
 @Composable
 fun SettingsSheet(
@@ -146,14 +160,14 @@ private fun Section(icon: ImageVector, title: String, line: String, trailing: @C
     }
 }
 
-/** what's on its way, and so who gets to ring */
+/** what's on its way, and so who gets to ring; swipe one away once it's here */
 @Composable
-fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: () -> Unit, onDismiss: () -> Unit) {
+fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: () -> Unit, onClear: (brand: String) -> Unit, onDismiss: () -> Unit) {
     val haptics = rememberHaptics()
     val scheme = MaterialTheme.colorScheme
     val byBrand = expecting.sortedByDescending { it.at }.distinctBy { it.brand }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp).animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())) {
             Text(
                 if (byBrand.isEmpty()) "Nothing on its way" else "On its way",
                 style = MaterialTheme.typography.headlineMediumEmphasized,
@@ -161,7 +175,7 @@ fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: 
             Spacer(Modifier.height(6.dp))
             Text(
                 if (byBrand.isEmpty()) "Strangers ring silently. When an order or a ride is coming, their calls ring out loud."
-                else "Until these arrive, strangers ring out loud: it's probably the rider.",
+                else "Until these arrive, strangers ring out loud: it's probably the rider. Swipe one away once it's here.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = scheme.onSurfaceVariant,
             )
@@ -170,38 +184,71 @@ fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: 
                 byBrand.forEachIndexed { i, s ->
                     val big = 20.dp
                     val small = 4.dp
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(if (i == 0) big else small, if (i == 0) big else small, if (i == byBrand.lastIndex) big else small, if (i == byBrand.lastIndex) big else small))
-                            .background(scheme.surfaceContainerHigh)
-                            .padding(horizontal = 18.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(scheme.tertiaryContainer), contentAlignment = Alignment.Center) {
-                            Icon(
-                                when {
-                                    s.strength == Strength.Today -> Icons.Rounded.Today
-                                    s.brand in setOf("Uber", "Ola", "Rapido", "BluSmart", "Namma Yatri", "inDrive") -> Icons.Rounded.LocalTaxi
-                                    else -> Icons.Rounded.DeliveryDining
-                                },
-                                null, tint = scheme.onTertiaryContainer,
-                            )
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column {
-                            Text(if (s.brand == DeliveryRules.DELIVERY) "A delivery" else s.brand, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                (if (s.strength == Strength.Live) "On the way" else "Arriving today") + " · " + seen(s.at),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = scheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    val shape = RoundedCornerShape(if (i == 0) big else small, if (i == 0) big else small, if (i == byBrand.lastIndex) big else small, if (i == byBrand.lastIndex) big else small)
+                    key(s.brand) { ExpectingRow(s, shape, onClear = { onClear(s.brand) }) }
                 }
             }
             if (!setup.readsNotifications) {
                 Spacer(Modifier.height(12.dp))
                 TextButton(onClick = { haptics.play(Haptic.Tap); onAllowNotifications() }) { Text("Let Ghanti see delivery notifications") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpectingRow(s: Signal, shape: Shape, onClear: () -> Unit) {
+    val haptics = rememberHaptics()
+    val scheme = MaterialTheme.colorScheme
+    val swipe = rememberSwipeToDismissBoxState()
+    // one tick as the swipe crosses the line where letting go clears it
+    LaunchedEffect(swipe) {
+        snapshotFlow { swipe.targetValue != SwipeToDismissBoxValue.Settled }.drop(1).filter { it }.collect { haptics.play(Haptic.Threshold) }
+    }
+    SwipeToDismissBox(
+        state = swipe,
+        onDismiss = { onClear() },
+        backgroundContent = {
+            val toEnd = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 20.dp).graphicsLayer {
+                    // fades in with the swipe; progress reads 1 while settled, so go by the offset
+                    alpha = (abs(runCatching { swipe.requireOffset() }.getOrDefault(0f)) / (size.width * 0.35f)).coerceIn(0f, 1f)
+                },
+                horizontalArrangement = if (toEnd) Arrangement.Start else Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Rounded.Check, null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("It's here", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+            }
+        },
+    ) {
+        Row(
+            Modifier.fillMaxWidth()
+                .clip(shape)
+                .background(scheme.surfaceContainerHigh)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(scheme.tertiaryContainer), contentAlignment = Alignment.Center) {
+                Icon(
+                    when {
+                        s.strength == Strength.Today -> Icons.Rounded.Today
+                        s.brand in setOf("Uber", "Ola", "Rapido", "BluSmart", "Namma Yatri", "inDrive") -> Icons.Rounded.LocalTaxi
+                        else -> Icons.Rounded.DeliveryDining
+                    },
+                    null, tint = scheme.onTertiaryContainer,
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(if (s.brand == DeliveryRules.DELIVERY) "A delivery" else s.brand, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    (if (s.strength == Strength.Live) "On the way" else "Arriving today") + " · " + seen(s.at),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -43,6 +43,8 @@ import io.github.jaswantk917.ghanti.data.Recents
 import io.github.jaswantk917.ghanti.data.SpecialCode
 import io.github.jaswantk917.ghanti.signals.DeliveryListener
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
+import io.github.jaswantk917.ghanti.signals.Signal
+import io.github.jaswantk917.ghanti.signals.Strength
 import io.github.jaswantk917.ghanti.ui.home.ExpectingSheet
 import io.github.jaswantk917.ghanti.ui.home.GhantiWelcome
 import io.github.jaswantk917.ghanti.ui.util.Haptic
@@ -248,7 +250,13 @@ class MainActivity : ComponentActivity() {
         }
         imeis?.let { found -> ImeiSheet(found, onCopy = actions::copy, onDismiss = { imeis = null }) }
         if (expectingOpen) {
-            ExpectingSheet(expecting, setup, onAllowNotifications = ::openListenerSettings, onDismiss = { expectingOpen = false })
+            ExpectingSheet(
+                expecting, setup,
+                onAllowNotifications = ::openListenerSettings,
+                // as if the app had said it arrived: a later update of that brand brings it back
+                onClear = { brand -> app.signals.record(Signal(brand, Strength.Done, System.currentTimeMillis())) },
+                onDismiss = { expectingOpen = false },
+            )
         }
     }
 

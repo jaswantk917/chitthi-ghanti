@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.11:
+
+```
+In Ghanti, tap the delivery line under the title to see what's on its way. Swipe one away once it's here, and strangers go back to ringing silently.
+```
+
 1.10:
 
 ```
