@@ -10,6 +10,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -156,13 +157,18 @@ fun InCallScreen(
     var routes by remember { mutableStateOf(false) }
     val ended = endedAt != null
     // notes are for a call that's happening or just happened, and the keypad needs the room
-    val canNote = !keypad && (ended || call.phase == Phase.Active || call.phase == Phase.Holding || call.phase == Phase.Dialing)
+    val notable = ended || call.phase == Phase.Active || call.phase == Phase.Holding || call.phase == Phase.Dialing
+    val canNote = !keypad && notable
     // back closes the keypad before it leaves the call screen
     BackHandler(enabled = keypad) { keypad = false }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
-        // the face gives up room on short screens and when a note is showing
-        val backdrop = (maxHeight - 720.dp - if (canNote) 56.dp else 0.dp).coerceIn(150.dp, 240.dp)
+        // the face gives up room on short screens and when a note can show; not tied to the keypad,
+        // or the face grows for a frame when the keypad hides the note, then shrinks away
+        val backdrop by animateDpAsState(
+            (maxHeight - 720.dp - if (notable) 56.dp else 0.dp).coerceIn(150.dp, 240.dp),
+            MaterialTheme.motionScheme.defaultSpatialSpec(), label = "face",
+        )
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).navigationBarsPadding().padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

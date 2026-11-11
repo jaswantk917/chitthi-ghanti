@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.2:
+
+```
+Smoother call screen: the caller's face no longer jumps when you open the keypad or answer.
+```
+
 1.1:
 
 ```
