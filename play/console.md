@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.8:
+
+```
+Ghanti vibrates when a call connects and when the other side hangs up, so you can feel it with the phone at your ear (switch it off in Ghanti settings). After a conference drops to one person, they show by name again.
+```
+
 1.7:
 
 ```
