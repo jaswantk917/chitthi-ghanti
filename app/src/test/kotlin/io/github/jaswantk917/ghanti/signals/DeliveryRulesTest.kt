@@ -2,6 +2,7 @@ package io.github.jaswantk917.ghanti.signals
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,7 +18,7 @@ class DeliveryRulesTest {
     @Test
     fun `app notifications name the app, chat messages name the brand they mention`() {
         val bistro = DeliveryRules.fromNotification("com.blinkit.bistro", "Bistro", "Your order is on the way! Arriving in 8 mins", t(13))
-        assertEquals(Signal("Bistro", Strength.Live, t(13)), bistro)
+        assertEquals(Signal("Bistro", Strength.Live, t(13), due = t(13, 8)), bistro)
         val whatsapp = DeliveryRules.fromNotification("com.whatsapp", "WhatsApp", "Amazon: Your package will be delivered today", t(9))
         assertEquals("Amazon", whatsapp?.brand)
         assertEquals(Strength.Today, whatsapp?.strength)
@@ -97,6 +98,34 @@ class DeliveryRulesTest {
     @Test
     fun `with silencing off everyone rings`() {
         assertTrue(DeliveryRules.decide(stranger, false, emptyList(), null, t(13), settings.copy(silenceUnknown = false), zone).ring)
+    }
+
+    @Test
+    fun `an order with a stated time stays open until a little after it, and ends when it arrives`() {
+        // Bistro, 11 Nov: confirmed 3:01 saying 15 mins, the rider called 3:18, arrived 3:19
+        val confirmed = DeliveryRules.fromNotification("com.blinkit.bistro", "Bistro", "Order is confirmed\nArriving in 15 mins", t(15, 1))!!
+        assertEquals(Strength.Live, confirmed.strength)
+        assertEquals(t(15, 16), confirmed.due)
+        assertEquals("Probably Bistro delivery", DeliveryRules.guess(stranger, listOf(confirmed), t(15, 18), zone)?.title)
+        assertNotNull(DeliveryRules.guess(stranger, listOf(confirmed), t(15, 26), zone))
+        assertNull(DeliveryRules.guess(stranger, listOf(confirmed), t(15, 27), zone))
+        val arrived = DeliveryRules.fromNotification("com.blinkit.bistro", "Bistro", "Order arrived ✅\nThank you for placing the order!", t(15, 19))!!
+        assertEquals(Strength.Done, arrived.strength)
+        assertNull(DeliveryRules.guess(stranger, listOf(confirmed, arrived), t(15, 20), zone))
+    }
+
+    @Test
+    fun `a rider at the door is still coming, not done`() {
+        assertEquals(Strength.Live, DeliveryRules.strengthOf("Your rider has arrived at your location"))
+    }
+
+    @Test
+    fun `arrival times are read from ranges and other wordings, and only with a number`() {
+        assertEquals(t(13, 15), DeliveryRules.dueIn("Reaching in 10-15 minutes", t(13)))
+        assertEquals(t(13, 30), DeliveryRules.dueIn("Your order will be delivered in 30 mins", t(13)))
+        assertNull(DeliveryRules.dueIn("Reorder & get delivery in mins", t(13)))
+        assertNull(DeliveryRules.dueIn("get desserts in 10 mins", t(13)))
+        assertNull(DeliveryRules.fromNotification("com.swishapp", "Swish", "dessert on a weekday?\nget desserts in 10 mins", t(13)))
     }
 
     @Test

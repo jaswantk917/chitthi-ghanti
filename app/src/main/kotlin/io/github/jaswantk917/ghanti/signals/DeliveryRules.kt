@@ -13,6 +13,8 @@ data class Signal(
     val at: Long,
     /** phone numbers named in the text, as their last 10 digits */
     val numbers: Set<String> = emptySet(),
+    /** when the text says it arrives ("Arriving in 15 mins"), if it says */
+    val due: Long? = null,
 )
 
 data class Guess(
@@ -38,6 +40,8 @@ data class Decision(val ring: Boolean, val guess: Guess? = null, val repeat: Boo
 object DeliveryRules {
     const val LIVE_WINDOW_MS = 90 * 60_000L
     const val REPEAT_WINDOW_MS = 3 * 60_000L
+    /** how late an order with a stated arrival time may run: Bistro said 15 mins and took 18 */
+    const val LATE_MS = 10 * 60_000L
 
     private val rideBrands = setOf("Uber", "Ola", "Rapido", "BluSmart", "Namma Yatri", "inDrive")
 
@@ -68,7 +72,7 @@ object DeliveryRules {
 
     private val done = listOf(
         "has been delivered", "was delivered", "is delivered", "delivered successfully", "successfully delivered",
-        "order delivered", "enjoy your meal", "trip ended", "trip completed", "ride completed", "hope you enjoyed",
+        "order delivered", "order arrived", "order has arrived", "enjoy your meal", "trip ended", "trip completed", "ride completed", "hope you enjoyed",
         "order cancelled", "order canceled", "has been cancelled", "was cancelled",
     )
     private val live = listOf(
@@ -83,9 +87,14 @@ object DeliveryRules {
         "scheduled for today", "delivery is scheduled for today",
     )
 
+    // "Arriving in 15 mins", "reaching in 10-12 minutes": the later end of a range
+    private val eta = Regex("""\b(?:arriv|reach|deliver)\w*\s+in\s+(?:\d{1,3}\s*(?:-|–|to)\s*)?(\d{1,3})\s*min""")
+
     private val phone = Regex("""(?<!\d)(?:\+?91[\s-]?|0)?([6-9]\d{4})[\s-]?(\d{5})(?!\d)""")
 
     fun last10(number: String): String = number.filter(Char::isDigit).takeLast(10)
+
+    fun dueIn(text: String, at: Long): Long? = eta.find(text.lowercase())?.let { at + it.groupValues[1].toLong() * 60_000L }
 
     fun numbersIn(text: String): Set<String> = phone.findAll(text).map { it.groupValues[1] + it.groupValues[2] }.toSet()
 
@@ -112,7 +121,7 @@ object DeliveryRules {
         } else {
             brandIn(appLabel) ?: brandIn(text) ?: appLabel
         }
-        return Signal(brand, strength, at, numbersIn(text))
+        return Signal(brand, strength, at, numbersIn(text), dueIn(text, at))
     }
 
     /** an SMS; DLT headers name the company even when the text doesn't */
@@ -120,17 +129,20 @@ object DeliveryRules {
         val strength = strengthOf(body) ?: return null
         val header = address.substringAfter('-').substringBefore('-').uppercase()
         val brand = brandIn(body) ?: headers[header] ?: DELIVERY
-        return Signal(brand, strength, at, numbersIn(body))
+        return Signal(brand, strength, at, numbersIn(body), dueIn(body, at))
     }
 
-    /** what's still open at [now]: live ones for an hour and a half, today's until midnight, minus anything since delivered */
+    /**
+     * What's still open at [now], minus anything since delivered: live ones until a little after the time they
+     * gave, or for an hour and a half when they gave none, and today's until midnight.
+     */
     fun active(signals: List<Signal>, now: Long, zone: ZoneId = ZoneId.systemDefault()): List<Signal> {
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val closedAt = signals.filter { it.strength == Strength.Done }.groupBy { it.brand }.mapValues { (_, v) -> v.maxOf { it.at } }
         return signals.filter { s ->
             val closed = closedAt[s.brand]?.let { it >= s.at } == true
             val open = when (s.strength) {
-                Strength.Live -> now - s.at in 0..LIVE_WINDOW_MS
+                Strength.Live -> now >= s.at && now <= (s.due?.plus(LATE_MS) ?: (s.at + LIVE_WINDOW_MS))
                 Strength.Today -> Instant.ofEpochMilli(s.at).atZone(zone).toLocalDate() == today && s.at <= now
                 Strength.Done -> false
             }

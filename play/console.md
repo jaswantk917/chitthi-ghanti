@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.10:
+
+```
+Strangers ring out loud only while a delivery is really on its way: Ghanti now goes by the arrival time in the app's notification and stops once the order has arrived. A stranger who calls twice still gets through.
+```
+
 1.9:
 
 ```

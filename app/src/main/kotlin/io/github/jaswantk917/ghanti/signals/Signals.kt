@@ -51,17 +51,19 @@ class Signals(private val context: Context) {
 
     private fun load(): List<Signal> = prefs.getStringSet(KEY, emptySet()).orEmpty().mapNotNull { line ->
         val parts = line.split(SEP)
-        if (parts.size != 4) return@mapNotNull null
+        // saved before arrival times were kept: four parts
+        if (parts.size !in 4..5) return@mapNotNull null
         Signal(
             brand = parts[0],
             strength = Strength.entries.firstOrNull { it.name == parts[1] } ?: return@mapNotNull null,
             at = parts[2].toLongOrNull() ?: return@mapNotNull null,
             numbers = parts[3].split(',').filter { it.isNotEmpty() }.toSet(),
+            due = parts.getOrNull(4)?.toLongOrNull(),
         )
     }.sortedBy { it.at }
 
     private fun save(list: List<Signal>) {
-        prefs.edit().putStringSet(KEY, list.map { listOf(it.brand, it.strength.name, it.at, it.numbers.joinToString(",")).joinToString(SEP) }.toSet()).apply()
+        prefs.edit().putStringSet(KEY, list.map { listOf(it.brand, it.strength.name, it.at, it.numbers.joinToString(","), it.due ?: "").joinToString(SEP) }.toSet()).apply()
     }
 
     private companion object {
