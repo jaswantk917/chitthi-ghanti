@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.9:
+
+```
+The blur at the bottom of your lists now fades in smoothly, with no line where it starts.
+```
+
 1.8:
 
 ```
