@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.12:
+
+```
+Opening Tring from the Play Store now shows both sides every time. Don't use one? Hide its icon there. Hiding both offers to uninstall instead.
+```
+
 1.11:
 
 ```
