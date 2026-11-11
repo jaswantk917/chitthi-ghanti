@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.13:
+
+```
+The Tring screen now looks like Chitthi and Ghanti: the name at the top, the two sides below.
+```
+
 1.12:
 
 ```
