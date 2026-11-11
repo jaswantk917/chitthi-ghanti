@@ -16,8 +16,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DarkMode
@@ -55,6 +53,7 @@ import io.github.jaswantk917.chitthi.data.Settings
 import io.github.jaswantk917.chitthi.ui.theme.Palette
 import io.github.jaswantk917.chitthi.ui.util.Haptic
 import io.github.jaswantk917.chitthi.ui.util.rememberHaptics
+import io.github.jaswantk917.sheet.SheetColumn
 import kotlinx.coroutines.launch
 
 private val deleteChoices = listOf(0 to "Never", 15 to "15 min", 60 to "1 hr", 1440 to "1 day")
@@ -75,8 +74,8 @@ fun SettingsSheet(
     val scope = rememberCoroutineScope()
     var confirm by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp),
+        SheetColumn(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp),
         ) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
             Spacer(Modifier.height(16.dp))

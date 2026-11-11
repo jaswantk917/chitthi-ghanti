@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Block
@@ -52,6 +50,7 @@ import io.github.jaswantk917.ghanti.ui.theme.Palette
 import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.util.clockTime
+import io.github.jaswantk917.sheet.SheetColumn
 
 @Composable
 fun SettingsSheet(
@@ -66,7 +65,7 @@ fun SettingsSheet(
     val haptics = rememberHaptics()
     fun toggle(on: Boolean) = haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
+        SheetColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
             Spacer(Modifier.height(16.dp))
             Section(Icons.Rounded.Call, "Phone app", if (setup.isPhoneApp) "Ghanti answers your calls" else "Another app handles calls") {
