@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.jaswantk917.chitthighanti"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // Gemini Nano phones are all arm64
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -39,7 +39,7 @@ android {
             versionNameSuffix = "-debug"
             resValue("string", "app_name", "Chitthi debug")
             resValue("string", "ghanti_name", "Ghanti debug")
-            resValue("string", "app_label", "Chitthi & Ghanti debug")
+            resValue("string", "app_label", "Tring debug")
         }
         release {
             signingConfig = signingConfigs.findByName("release")
@@ -48,7 +48,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             resValue("string", "app_name", "Chitthi")
             resValue("string", "ghanti_name", "Ghanti")
-            resValue("string", "app_label", "Chitthi & Ghanti")
+            resValue("string", "app_label", "Tring")
         }
     }
 

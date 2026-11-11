@@ -8,7 +8,7 @@ Privacy policy: https://jaswantk917.github.io/chitthi-ghanti/privacy.html
 **App name** (30 max)
 
 ```
-Chitthi & Ghanti: SMS + Calls
+Tring: Calls & SMS
 ```
 
 **Short description** (80 max)
@@ -20,7 +20,7 @@ SMS that sorts itself, calls that keep strangers quiet. All on your phone.
 **Full description**
 
 ```
-Two everyday apps in one install, each with its own icon on your home screen. Use either, or both.
+Two everyday apps in one install: Chitthi for SMS and Ghanti for calls, each with its own icon on your home screen. Use either, or both.
 
 CHITTHI: MESSAGES THAT SORT THEMSELVES
 • OTPs, banks and deliveries up top. People in their own place. Promos out of the way.
@@ -64,7 +64,7 @@ Appears after the first bundle upload, under App content → Sensitive app permi
 - **Description:**
 
 ```
-Chitthi & Ghanti is an SMS app and a phone app in one install, each with its own launcher icon. The SMS side asks to become the default SMS handler before using any SMS permission, and uses them to show, sort, send, schedule and notify about messages. The phone side asks to become the default Phone handler before using call log or phone permissions, and uses them to show recent calls, place and answer calls through its own in-call screen, and screen calls. While the app is the default SMS handler, the phone side also reads recent SMS on the device to notice "out for delivery" messages, so a delivery rider's call can ring. If the user switches either role to another app, that side stops reading SMS or the call log and asks to become the default again. Nothing leaves the device.
+Tring is an SMS app and a phone app in one install, each with its own launcher icon. The SMS side asks to become the default SMS handler before using any SMS permission, and uses them to show, sort, send, schedule and notify about messages. The phone side asks to become the default Phone handler before using call log or phone permissions, and uses them to show recent calls, place and answer calls through its own in-call screen, and screen calls. While the app is the default SMS handler, the phone side also reads recent SMS on the device to notice "out for delivery" messages, so a delivery rider's call can ring. If the user switches either role to another app, that side stops reading SMS or the call log and asks to become the default again. Nothing leaves the device.
 ```
 
 - **Video:** link to the unlisted YouTube video (script below).
@@ -108,7 +108,15 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 4. Optional: with a delivery notification showing, a stranger's call rings and shows the delivery label.
 5. Open Settings → Blocked and add a "140" rule.
 
-## Release notes (first release)
+## Release notes
+
+1.1:
+
+```
+Now called Tring. Opening it from Play shows what's inside; Chitthi and Ghanti keep their own icons. Ghanti tells you when Android has turned off its lock-screen call screen, keeps a gap above the call buttons, gives mute, speaker and hold a crisp on/off tap, and no longer brings the keyboard back after a contacts search.
+```
+
+1.0:
 
 ```
 First release: Chitthi for SMS and Ghanti for calls, in one app, with blocking for both.

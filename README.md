@@ -1,4 +1,4 @@
-# Chitthi & Ghanti
+# Tring
 
 One Android app with two sides, each with its own icon on your home screen:
 

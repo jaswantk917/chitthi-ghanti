@@ -149,6 +149,19 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Play's "Open" button: getLaunchIntentForPackage prefers INFO over LAUNCHER, and INFO adds no home-screen icon -->
+        <activity
+            android:name="io.github.jaswantk917.hub.HubActivity"
+            android:exported="true"
+            android:label="@string/app_label"
+            android:taskAffinity=".hub"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.INFO" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name="io.github.jaswantk917.block.BlockedActivity"
             android:exported="false"

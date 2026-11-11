@@ -90,11 +90,9 @@ class Haptics(private val view: View) {
     @RequiresApi(Build.VERSION_CODES.R)
     private fun compositionSteps(haptic: Haptic): List<Step>? = when (haptic) {
         Haptic.Tap -> listOf(Step(Composition.PRIMITIVE_TICK, 0.5f))
-        Haptic.ToggleOn -> listOf(
-            Step(Composition.PRIMITIVE_QUICK_RISE, 0.35f),
-            Step(Composition.PRIMITIVE_CLICK, 0.6f, 20),
-        )
-        Haptic.ToggleOff -> listOf(Step(Composition.PRIMITIVE_QUICK_FALL, 0.4f))
+        // one short pulse each, firm for on and lighter for off, so mute or speaker reads without looking
+        Haptic.ToggleOn -> listOf(Step(Composition.PRIMITIVE_CLICK, 0.8f))
+        Haptic.ToggleOff -> listOf(Step(Composition.PRIMITIVE_TICK, 0.7f))
         Haptic.Threshold -> listOf(Step(Composition.PRIMITIVE_CLICK, 0.7f))
         Haptic.Hold -> listOf(
             Step(Composition.PRIMITIVE_QUICK_RISE, 0.5f),

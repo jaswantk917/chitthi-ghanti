@@ -162,7 +162,7 @@ fun InCallScreen(
 
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
         // the face gives up room on short screens and when a note is showing
-        val backdrop = (maxHeight - 680.dp - if (canNote) 56.dp else 0.dp).coerceIn(150.dp, 240.dp)
+        val backdrop = (maxHeight - 720.dp - if (canNote) 56.dp else 0.dp).coerceIn(150.dp, 240.dp)
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).navigationBarsPadding().padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -214,6 +214,8 @@ fun InCallScreen(
                 NoteEntry(memo?.note.orEmpty(), onClick = { haptics.play(Haptic.Tap); onNoting(true) }, modifier = Modifier.padding(top = 14.dp))
             }
             Spacer(Modifier.weight(1f))
+            // the weight above is zero once a guess and a note both show, so keep the controls off the note
+            Spacer(Modifier.height(24.dp))
 
             AnimatedContent(
                 targetState = when {

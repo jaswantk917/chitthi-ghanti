@@ -115,9 +115,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import io.github.jaswantk917.ghanti.data.Contact
@@ -158,11 +161,12 @@ interface HomeActions {
     fun expecting()
     fun makeDefault()
     fun allowNotifications()
+    fun allowFullScreen()
     fun recentsSeen()
 }
 
 /** [screensCalls]: Android asks the "Caller ID & spam app" whether a call rings, a separate role from the phone app */
-data class Setup(val isPhoneApp: Boolean, val screensCalls: Boolean, val readsNotifications: Boolean, val silencing: Boolean) {
+data class Setup(val isPhoneApp: Boolean, val screensCalls: Boolean, val readsNotifications: Boolean, val silencing: Boolean, val showsOverLock: Boolean = true) {
     val ready get() = isPhoneApp && screensCalls
 }
 
@@ -234,9 +238,15 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
     }
     val expandedFab by remember(current) { derivedStateOf { fabOpen || current.firstVisibleItemIndex == 0 } }
 
+    // the search field keeps focus otherwise, and Android brings its keyboard back over Recents or on return to the app
+    val focus = LocalFocusManager.current
     LaunchedEffect(pager) {
-        snapshotFlow { pager.currentPage }.distinctUntilChanged().drop(1).collect { haptics.play(Haptic.Segment) }
+        snapshotFlow { pager.currentPage }.distinctUntilChanged().drop(1).collect { page ->
+            haptics.play(Haptic.Segment)
+            if (page != 1) focus.clearFocus()
+        }
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { focus.clearFocus() }
     LaunchedEffect(pager.currentPage, state.recents.size) { if (pager.currentPage == 0) actions.recentsSeen() }
     // back from Contacts clears a search, then returns to Recents; only Recents leaves the app
     BackHandler(enabled = pager.currentPage == 1) {
@@ -421,6 +431,14 @@ private fun RecentsPage(
                     "Make Ghanti your phone app",
                     "Strangers stop ringing out loud, unless a delivery is on its way.",
                     "Switch", actions::makeDefault, Modifier.animateItem(),
+                )
+            }
+        } else if (!setup.showsOverLock) {
+            item(key = "setup-full-screen") {
+                SetupCard(
+                    "Show calls on the lock screen",
+                    "Android stopped Ghanti from opening the call screen, so calls only arrive as a notification.",
+                    "Allow", actions::allowFullScreen, Modifier.animateItem(),
                 )
             }
         } else if (!setup.screensCalls) {

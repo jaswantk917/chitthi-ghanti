@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti
 
 import android.Manifest
+import android.app.NotificationManager
 import android.app.role.RoleManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -107,6 +108,9 @@ class MainActivity : ComponentActivity() {
             screensCalls = roles.isRoleHeld(RoleManager.ROLE_CALL_SCREENING),
             readsNotifications = packageName in NotificationManagerCompat.getEnabledListenerPackages(this),
             silencing = app.prefs.settings.value.screen.silenceUnknown,
+            // 14+: Play grants this only once the calling declaration is approved, and the user can turn it off
+            showsOverLock = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                getSystemService(NotificationManager::class.java).canUseFullScreenIntent(),
         )
     }
 
@@ -195,6 +199,11 @@ class MainActivity : ComponentActivity() {
                     else screeningRole.launch(roles.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING))
                 }
                 override fun allowNotifications() = openListenerSettings()
+                override fun allowFullScreen() {
+                    val app = Uri.parse("package:$packageName")
+                    runCatching { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, app)) }
+                        .onFailure { startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)) }
+                }
                 override fun recentsSeen() {
                     if (!setup.isPhoneApp) return
                     runCatching { getSystemService(TelecomManager::class.java).cancelMissedCallsNotification() }
