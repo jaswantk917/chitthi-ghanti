@@ -51,7 +51,9 @@ internal fun names(all: List<String>) = when (all.size) {
 data class Ended(val title: String, val connectedAt: Long, val endedAt: Long)
 
 object Calls {
-    private val tracked = LinkedHashMap<Call, Person?>()
+    /** each call with who its number belonged to when last looked up */
+    private val tracked = LinkedHashMap<Call, Pair<String, Person?>>()
+    private var context: Context? = null
     /** a conference's names, kept for its "Call ended" beat: the people leave before the conference does */
     private val conferenceNames = HashMap<Call, String>()
     private val _calls = MutableStateFlow<List<CallUi>>(emptyList())
@@ -65,7 +67,9 @@ object Calls {
     internal var service: GhantiInCallService? = null
 
     internal fun track(context: Context, call: Call) {
-        tracked[call] = Contacts.lookup(context, numberOf(call))
+        this.context = context.applicationContext
+        val number = numberOf(call)
+        tracked[call] = number to Contacts.lookup(context, number)
         _ended.value = null
         publish()
     }
@@ -85,7 +89,15 @@ object Calls {
     }
 
     internal fun publish() {
-        val all = tracked.map { (call, person) -> describe(call, person) }
+        // a call's number can change under it: when a conference drops to one person, the network
+        // turns the conference into that person's call, so look them up again
+        context?.let { context ->
+            tracked.entries.forEach { entry ->
+                val number = numberOf(entry.key)
+                if (number != entry.value.first) entry.setValue(number to Contacts.lookup(context, number))
+            }
+        }
+        val all = tracked.map { (call, known) -> describe(call, known.second) }
         val byCall = all.associateBy { it.call }
         // merged calls live inside their conference: Telecom keeps them as children, still "active",
         // and listing them beside it made one look like it was still going and the other look swappable
