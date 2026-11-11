@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.7:
+
+```
+While a call connects, big soft shapes drift behind the call screen, then gather into the caller's face when they pick up.
+```
+
 1.6:
 
 ```
