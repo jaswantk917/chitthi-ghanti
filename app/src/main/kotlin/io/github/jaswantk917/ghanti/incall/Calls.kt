@@ -31,15 +31,29 @@ data class CallUi(
     val canSwap: Boolean,
     val isConference: Boolean,
     val sims: List<PhoneAccountHandle>,
+    /** for a conference: the people in it, each still its own call in Telecom */
+    val participants: List<CallUi> = emptyList(),
+    /** a participant that can be taken back out to talk privately */
+    val canSplit: Boolean = false,
+    /** a participant that can be dropped while the rest carry on */
+    val canDrop: Boolean = false,
 ) {
-    val title get() = person?.name ?: networkName ?: number.ifBlank { "Private number" }
+    val title: String get() = if (participants.isNotEmpty()) names(participants.map { it.title }) else person?.name ?: networkName ?: number.ifBlank { "Private number" }
     val silenced get() = outcome?.rang == false
+}
+
+internal fun names(all: List<String>) = when (all.size) {
+    1 -> all[0]
+    2 -> "${all[0]} & ${all[1]}"
+    else -> all.dropLast(1).joinToString(", ") + " & " + all.last()
 }
 
 data class Ended(val title: String, val connectedAt: Long, val endedAt: Long)
 
 object Calls {
     private val tracked = LinkedHashMap<Call, Person?>()
+    /** a conference's names, kept for its "Call ended" beat: the people leave before the conference does */
+    private val conferenceNames = HashMap<Call, String>()
     private val _calls = MutableStateFlow<List<CallUi>>(emptyList())
     val calls: StateFlow<List<CallUi>> = _calls
     private val _audio = MutableStateFlow<CallAudioState?>(null)
@@ -60,8 +74,9 @@ object Calls {
         val gone = _calls.value.firstOrNull { it.call == call }
         tracked.remove(call)
         if (tracked.isEmpty() && gone != null && gone.phase != Phase.Ringing) {
-            _ended.value = Ended(gone.title, gone.connectedAt, System.currentTimeMillis())
+            _ended.value = Ended(conferenceNames[call] ?: gone.title, gone.connectedAt, System.currentTimeMillis())
         }
+        conferenceNames.remove(call)
         publish()
     }
 
@@ -70,7 +85,15 @@ object Calls {
     }
 
     internal fun publish() {
-        _calls.value = tracked.map { (call, person) -> describe(call, person) }
+        val all = tracked.map { (call, person) -> describe(call, person) }
+        val byCall = all.associateBy { it.call }
+        // merged calls live inside their conference: Telecom keeps them as children, still "active",
+        // and listing them beside it made one look like it was still going and the other look swappable
+        _calls.value = all.filter { it.call.parent?.let { parent -> parent !in tracked } ?: true }
+            .map { ui ->
+                val people = ui.call.children.mapNotNull { byCall[it] }.filter { it.phase != Phase.Ended }
+                if (people.isEmpty()) ui else ui.copy(isConference = true, participants = people).also { conferenceNames[ui.call] = it.title }
+            }
             .filter { it.phase != Phase.Ended }
             // the call needing a decision first, then the live one
             .sortedBy { it.phase.ordinal }
@@ -99,6 +122,8 @@ object Calls {
         val other = call.conferenceableCalls.firstOrNull()
         if (other != null) call.conference(other) else call.mergeConference()
     }
+    /** take one person out of the conference to talk privately; the rest go on hold */
+    fun split(call: Call) = call.splitFromConference()
     fun chooseSim(call: Call, sim: PhoneAccountHandle) = call.phoneAccountSelected(sim, false)
 
     private fun numberOf(call: Call) = call.details.handle?.schemeSpecificPart.orEmpty()
@@ -130,6 +155,8 @@ object Calls {
             canHold = d.can(Call.Details.CAPABILITY_HOLD) || d.can(Call.Details.CAPABILITY_SUPPORT_HOLD),
             canMerge = call.conferenceableCalls.isNotEmpty() || d.can(Call.Details.CAPABILITY_MERGE_CONFERENCE),
             canSwap = tracked.size > 1,
+            canSplit = d.can(Call.Details.CAPABILITY_SEPARATE_FROM_CONFERENCE),
+            canDrop = d.can(Call.Details.CAPABILITY_DISCONNECT_FROM_CONFERENCE),
             isConference = d.hasProperty(Call.Details.PROPERTY_CONFERENCE),
             sims = sims,
         )

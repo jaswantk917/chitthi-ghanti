@@ -14,6 +14,8 @@ class GhantiInCallService : InCallService() {
         override fun onStateChanged(call: Call, state: Int) = changed()
         override fun onDetailsChanged(call: Call, details: Call.Details) = changed()
         override fun onConferenceableCallsChanged(call: Call, conferenceableCalls: MutableList<Call>) = changed()
+        override fun onParentChanged(call: Call, parent: Call?) = changed()
+        override fun onChildrenChanged(call: Call, children: MutableList<Call>) = changed()
     }
 
     override fun onCreate() {

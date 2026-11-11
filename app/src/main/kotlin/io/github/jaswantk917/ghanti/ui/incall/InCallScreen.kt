@@ -8,12 +8,15 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -41,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -58,6 +62,7 @@ import androidx.compose.material.icons.rounded.DeliveryDining
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Dialpad
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LocalTaxi
 import androidx.compose.material.icons.rounded.Mic
@@ -73,6 +78,7 @@ import androidx.compose.material.icons.rounded.SwapCalls
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -84,11 +90,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -123,6 +131,9 @@ import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.clockTime
 import io.github.jaswantk917.ghanti.ui.util.pressScale
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -155,10 +166,11 @@ fun InCallScreen(
     var tones by remember(call.call) { mutableStateOf("") }
     var replies by remember { mutableStateOf(false) }
     var routes by remember { mutableStateOf(false) }
+    var people by remember { mutableStateOf(false) }
     val ended = endedAt != null
     // notes are for a call that's happening or just happened, and the keypad needs the room
     val notable = ended || call.phase == Phase.Active || call.phase == Phase.Holding || call.phase == Phase.Dialing
-    val canNote = !keypad && notable
+    val canNote = !keypad && notable && !call.isConference
     // back closes the keypad before it leaves the call screen
     BackHandler(enabled = keypad) { keypad = false }
 
@@ -186,15 +198,33 @@ fun InCallScreen(
                 exit = shrinkVertically() + fadeOut() + scaleOut(targetScale = 0.8f),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(contentAlignment = Alignment.Center) {
-                        LivingBackdrop(ringing = call.phase == Phase.Ringing && !ended, size = backdrop)
-                        Avatar(
-                            name = call.person?.name,
-                            photo = call.person?.photo,
-                            seed = call.number,
-                            size = backdrop * 0.55f,
-                            hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
+                    val speaker = audio?.route == CallAudioState.ROUTE_SPEAKER && !ended
+                    // on speaker the phone is away from your face: the face comes forward to be read from there
+                    val zoom by animateFloatAsState(if (speaker) 1.12f else 1f, spring(dampingRatio = 0.55f, stiffness = 260f), label = "zoom")
+                    Box(Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }, contentAlignment = Alignment.Center) {
+                        LivingBackdrop(
+                            ringing = call.phase == Phase.Ringing && !ended,
+                            connecting = call.phase == Phase.Dialing && !ended,
+                            loud = speaker,
+                            still = ended || audio?.isMuted == true || call.phase == Phase.Holding,
+                            paused = ended || call.phase == Phase.Holding,
+                            size = backdrop,
                         )
+                        AnimatedContent(
+                            call.participants,
+                            transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.85f)) togetherWith (fadeOut() + scaleOut(targetScale = 1.1f)) },
+                            contentKey = { it.isNotEmpty() },
+                            label = "faces",
+                        ) { participants ->
+                            if (participants.isNotEmpty()) Faces(participants, backdrop * 0.55f)
+                            else Avatar(
+                                name = call.person?.name,
+                                photo = call.person?.photo,
+                                seed = call.number,
+                                size = backdrop * 0.55f,
+                                hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(20.dp))
                 }
@@ -206,7 +236,15 @@ fun InCallScreen(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Secondary(call, tones)
+            if (call.participants.isNotEmpty() && !ended) {
+                TextButton(onClick = { haptics.play(Haptic.Tap); people = true }) {
+                    Icon(Icons.Rounded.Groups, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("${call.participants.size} people")
+                }
+            } else {
+                Secondary(call, tones)
+            }
             Spacer(Modifier.height(14.dp))
             Hints(
                 call, ended,
@@ -269,6 +307,7 @@ fun InCallScreen(
     }
     if (replies) QuickReplies(call, call.outcome?.guess, onDismiss = { replies = false })
     if (routes && audio != null) RouteSheet(audio, onDismiss = { routes = false })
+    if (people && call.participants.isNotEmpty()) PeopleSheet(call.participants, onDismiss = { people = false })
 }
 
 private enum class Mode { Incoming, Controls, Keypad, Sim, Ended }
@@ -450,19 +489,46 @@ private fun NoteEntry(note: String, onClick: () -> Unit, modifier: Modifier = Mo
     }
 }
 
-/** a slow, breathing shape behind the face; ripples go out while it rings */
+/**
+ * A slow, breathing shape behind the face; ripples go out while it rings. While a call connects,
+ * a few small shapes drift around it and gather into it once the other side picks up. On speaker
+ * it opens into a sunburst, muted it stops breathing, on hold it also stops turning and dims.
+ */
 @Composable
-private fun LivingBackdrop(ringing: Boolean, size: androidx.compose.ui.unit.Dp) {
+private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean, still: Boolean, paused: Boolean, size: androidx.compose.ui.unit.Dp) {
     val scheme = MaterialTheme.colorScheme
-    val loop = rememberInfiniteTransition(label = "backdrop")
-    val spin by loop.animateFloat(0f, 360f, infiniteRepeatable(tween(24_000, easing = LinearEasing)), label = "spin")
-    val breathe by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(3_200), RepeatMode.Reverse), label = "breathe")
-    val ripple by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ripple")
-    val morph = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Cookie12Sided) }
+    val ripple by rememberInfiniteTransition(label = "ripple").animateFloat(
+        0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ripple",
+    )
+    val pace by animateFloatAsState(if (paused) 0f else 1f, tween(700), label = "pace")
+    val breath by animateFloatAsState(if (still) 0f else 1f, tween(500), label = "breath")
+    val open by animateFloatAsState(if (loud) 1f else 0f, spring(dampingRatio = 0.6f, stiffness = 180f), label = "open")
+    val dim by animateFloatAsState(if (paused) 0.25f else 0.55f, tween(700), label = "dim")
+    // seconds of motion; stands still while paused instead of jumping when it resumes
+    var clock by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var last = withFrameNanos { it }
+        while (true) {
+            withFrameNanos { now ->
+                clock += (now - last) / 1e9f * pace
+                last = now
+            }
+        }
+    }
+    val gather = remember { Animatable(if (connecting) 0f else 1f) }
+    LaunchedEffect(connecting) {
+        if (connecting) gather.snapTo(0f) else gather.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 90f))
+    }
+    val shape = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Sunny) }
+    val drifters = remember {
+        listOf(MaterialShapes.Clover4Leaf, MaterialShapes.Pill, MaterialShapes.Cookie4Sided).map { Morph(it, it) }
+    }
+    val drifterColors = listOf(scheme.tertiaryContainer, scheme.secondaryContainer, scheme.primaryContainer)
     val path = remember { Path() }
     val matrix = remember { Matrix() }
     Canvas(Modifier.size(size)) {
         val side = this.size.minDimension
+        val center = Offset(side / 2f, side / 2f)
         if (ringing) {
             for (i in 0..1) {
                 val p = (ripple + i * 0.5f) % 1f
@@ -473,14 +539,77 @@ private fun LivingBackdrop(ringing: Boolean, size: androidx.compose.ui.unit.Dp) 
                 )
             }
         }
+        val g = gather.value
+        if (g < 1f) {
+            drifters.forEachIndexed { i, morph ->
+                // each on its own slow, wandering orbit; on connect they slide into the middle and melt
+                val t = clock * (0.35f + 0.12f * i) + i * 2.1f
+                val reach = side * (0.38f + 0.06f * sin(clock * 0.6f + i * 1.7f)) * (1f - g)
+                val at = center + Offset(cos(t) * reach, sin(t * 1.3f) * reach * 0.85f)
+                val piece = side * 0.16f * (1f - g * 0.7f)
+                path.rewind()
+                morph.toPath(0f, path)
+                matrix.reset()
+                matrix.translate(at.x - piece / 2f, at.y - piece / 2f)
+                matrix.scale(piece, piece)
+                path.transform(matrix)
+                rotate(clock * 40f * (if (i % 2 == 0) 1f else -1f), at) {
+                    drawPath(path, drifterColors[i].copy(alpha = 0.9f * (1f - g)))
+                }
+            }
+        }
+        // a soft swell as the drifters land
+        val swell = 1f + 0.07f * sin(g * PI.toFloat()) + 0.03f * breath * sin(clock * 2f * PI.toFloat() / 6.4f)
         path.rewind()
-        morph.toPath(breathe, path)
+        shape.toPath(open, path)
         matrix.reset()
-        val blob = side * 0.82f
+        val blob = side * 0.82f * swell
         matrix.translate((side - blob) / 2f, (side - blob) / 2f)
         matrix.scale(blob, blob)
         path.transform(matrix)
-        rotate(spin, Offset(side / 2f, side / 2f)) { drawPath(path, scheme.primaryContainer.copy(alpha = 0.55f)) }
+        rotate(clock * 15f, center) { drawPath(path, scheme.primaryContainer.copy(alpha = dim)) }
+    }
+}
+
+/** a conference: everyone's face, overlapping, the newest in front */
+@Composable
+private fun Faces(participants: List<CallUi>, size: androidx.compose.ui.unit.Dp) {
+    val shown = participants.take(3)
+    val each = size * 0.72f
+    Box(Modifier.size(width = each + each * 0.55f * (shown.size - 1), height = each), contentAlignment = Alignment.CenterStart) {
+        shown.forEachIndexed { i, p ->
+            Avatar(p.person?.name, p.person?.photo, p.number, Modifier.offset(x = each * 0.55f * i), size = each)
+        }
+    }
+}
+
+@Composable
+private fun PeopleSheet(participants: List<CallUi>, onDismiss: () -> Unit) {
+    val haptics = rememberHaptics()
+    val scheme = MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
+            Text("In this call", style = MaterialTheme.typography.headlineMediumEmphasized)
+            Spacer(Modifier.height(16.dp))
+            participants.forEach { p ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(p.person?.name, p.person?.photo, p.number, size = 44.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (p.person != null) Text(p.number, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    }
+                    if (p.canSplit) {
+                        TextButton(onClick = { haptics.play(Haptic.Tap); Calls.split(p.call); onDismiss() }) { Text("Private") }
+                    }
+                    if (p.canDrop) {
+                        IconButton(onClick = { haptics.play(Haptic.Delete); Calls.hangUp(p.call) }) {
+                            Icon(Icons.Rounded.CallEnd, "Drop ${p.title}", tint = DeclineRed)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
