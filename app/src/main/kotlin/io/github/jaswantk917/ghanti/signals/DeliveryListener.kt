@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti.signals
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
@@ -18,9 +19,16 @@ class DeliveryListener : NotificationListenerService() {
 
     private fun consider(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
+        if (silent(sbn) && sbn.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) return
         val text = textOf(sbn.notification.extras).ifBlank { return }
         val signal = DeliveryRules.fromNotification(sbn.packageName, labelOf(sbn.packageName), text, sbn.postTime) ?: return
         GhantiApp.instance.signals.record(signal)
+    }
+
+    // promos come on silent channels ("Chef crafted meals at your door in 30 mins"); live trackers are silent too, but ongoing
+    private fun silent(sbn: StatusBarNotification): Boolean {
+        val ranking = Ranking()
+        return currentRanking?.getRanking(sbn.key, ranking) == true && ranking.importance < NotificationManager.IMPORTANCE_DEFAULT
     }
 
     private fun labelOf(pkg: String): String = try {

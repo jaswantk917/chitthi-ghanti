@@ -42,6 +42,8 @@ object DeliveryRules {
     const val REPEAT_WINDOW_MS = 3 * 60_000L
     /** how late an order with a stated arrival time may run: Bistro said 15 mins and took 18 */
     const val LATE_MS = 10 * 60_000L
+    /** a just-placed order: the shop, pharmacist or restaurant often calls in the first minutes (Plazza's doctor did) */
+    const val PLACED_MS = 30 * 60_000L
 
     private val rideBrands = setOf("Uber", "Ola", "Rapido", "BluSmart", "Namma Yatri", "inDrive")
 
@@ -78,9 +80,13 @@ object DeliveryRules {
     private val live = listOf(
         "out for delivery", "on the way", "on his way", "on her way", "is arriving", "arriving in", "arriving soon",
         "will arrive", "reaching in", "reaching you", "about to reach", "is nearby", "is near you", "has reached",
-        "reached your", "at your door", "at your location", "delivery partner", "delivery executive", "delivery agent",
+        "reached your", "is at your door", "arrived at your door", "is at your location", "arrived at your location", "delivery partner", "delivery executive", "delivery agent",
         "delivery boy", "rider", "valet", "picked up your order", "order is picked", "has picked up", "driver is",
         "captain is", "your ride", "delivery otp", "otp for delivery", "delivery code", "professional is on",
+    )
+    private val placed = listOf(
+        "order confirmed", "order is confirmed", "order has been confirmed", "order placed", "order is placed",
+        "order has been placed", "booking confirmed", "booking is confirmed",
     )
     private val today = listOf(
         "delivered today", "delivery today", "arriving today", "arrive today", "expected today", "by today",
@@ -94,7 +100,11 @@ object DeliveryRules {
 
     fun last10(number: String): String = number.filter(Char::isDigit).takeLast(10)
 
-    fun dueIn(text: String, at: Long): Long? = eta.find(text.lowercase())?.let { at + it.groupValues[1].toLong() * 60_000L }
+    fun dueIn(text: String, at: Long): Long? {
+        val t = text.lowercase()
+        eta.find(t)?.let { return at + it.groupValues[1].toLong() * 60_000L }
+        return if (placed.any(t::contains)) at + PLACED_MS else null
+    }
 
     fun numbersIn(text: String): Set<String> = phone.findAll(text).map { it.groupValues[1] + it.groupValues[2] }.toSet()
 
@@ -102,7 +112,7 @@ object DeliveryRules {
         val t = text.lowercase()
         return when {
             done.any(t::contains) -> Strength.Done
-            live.any(t::contains) -> Strength.Live
+            live.any(t::contains) || placed.any(t::contains) -> Strength.Live
             today.any(t::contains) -> Strength.Today
             else -> null
         }

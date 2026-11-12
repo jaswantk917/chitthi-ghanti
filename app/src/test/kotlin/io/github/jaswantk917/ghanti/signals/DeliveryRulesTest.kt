@@ -32,6 +32,7 @@ class DeliveryRulesTest {
     @Test
     fun `ordinary notifications are not signals`() {
         assertNull(DeliveryRules.fromNotification("com.whatsapp", "WhatsApp", "Bhai kal milte hain", t(13)))
+        assertNull(DeliveryRules.fromNotification("com.licious", "Licious", "Let us handle the food. Chef crafted Snacks & Meals at your door in 30 mins, till 10 PM!", t(13)))
         assertNull(DeliveryRules.fromSms("AX-ICICIT-S", "Rs 500 debited from A/c XX1234. Not you? Call 18002586161", t(13)))
     }
 
@@ -126,6 +127,16 @@ class DeliveryRulesTest {
         assertNull(DeliveryRules.dueIn("Reorder & get delivery in mins", t(13)))
         assertNull(DeliveryRules.dueIn("get desserts in 10 mins", t(13)))
         assertNull(DeliveryRules.fromNotification("com.swishapp", "Swish", "dessert on a weekday?\nget desserts in 10 mins", t(13)))
+    }
+
+    @Test
+    fun `a call just after an order is placed rings, for half an hour`() {
+        val plazza = DeliveryRules.fromNotification("com.plazza", "Plazza", "Order Confirmed\nYour order is confirmed. We will notify you once it is packed", t(12, 36))
+        assertEquals(Signal("Plazza", Strength.Live, t(12, 36), due = t(13, 6)), plazza)
+        val signals = listOfNotNull(plazza)
+        assertTrue(DeliveryRules.decide(stranger, false, signals, null, t(12, 37), settings, zone).ring)
+        assertFalse(DeliveryRules.decide(stranger, false, signals, null, t(13, 20), settings, zone).ring)
+        assertEquals(t(13, 15), DeliveryRules.dueIn("Order placed! Arriving in 15 mins", t(13)))
     }
 
     @Test
