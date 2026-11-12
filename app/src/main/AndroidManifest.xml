@@ -45,14 +45,17 @@
         android:name=".ChitthiApp"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/tring_launcher"
         android:label="@string/app_label"
-        android:roundIcon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/tring_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Chitthi">
 
+        <!-- the SMS side keeps its own icon; the app's (Tring's) shows in search, settings and notification history -->
         <activity
             android:name=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher"
             android:label="@string/app_name"
             android:exported="true"
             android:launchMode="singleTop"
