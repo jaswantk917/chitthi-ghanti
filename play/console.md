@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.15:
+
+```
+Tring has its own icon, so calls no longer wear Chitthi's in search and notification history. A call from the shop or pharmacy right after you order now rings through, and promotions no longer count as a delivery on its way.
+```
+
 1.14:
 
 ```
