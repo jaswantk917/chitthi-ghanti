@@ -18,6 +18,7 @@ android {
         versionName = "1.16"
         // Gemini Nano phones are all arm64
         ndk { abiFilters += "arm64-v8a" }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     // the Play upload key; Google holds the app signing key. Both live outside the repo
@@ -96,4 +97,9 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
