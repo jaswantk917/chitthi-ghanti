@@ -57,7 +57,7 @@ import io.github.jaswantk917.ghanti.ui.util.onLongPress
 import io.github.jaswantk917.ghanti.ui.util.pressScale
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 
-private data class Match(val name: String?, val number: String, val photo: android.net.Uri?, val score: Int)
+private data class Match(val name: String?, val number: String, val photo: android.net.Uri?, val score: Int, val affinity: Double)
 
 @Composable
 fun KeypadSheet(
@@ -75,11 +75,13 @@ fun KeypadSheet(
     val matches = remember(digits, contacts, recents) {
         if (digits.isEmpty()) emptyList()
         else {
-            val people = contacts.flatMap { c -> c.numbers.map { Match(c.name, it.number, c.photo, T9.score(digits, c.name, it.number)) } }
-            val strangers = recents.filter { it.name == null }.map { Match(null, it.group.number, null, T9.score(digits, "", it.group.number)) }
-            (people + strangers).filter { it.score > 0 }
+            val now = System.currentTimeMillis()
+            val calls = recents.flatMap { it.group.entries }.groupBy { DeliveryRules.last10(it.number) }
+            fun affinity(starred: Boolean, number: String) = T9.affinity(starred, calls[DeliveryRules.last10(number)].orEmpty(), now)
+            val people = contacts.flatMap { c -> c.numbers.map { Match(c.name, it.number, c.photo, T9.score(digits, c.name, it.number), affinity(c.starred, it.number)) } }
+            val strangers = recents.filter { it.name == null }.map { Match(null, it.group.number, null, T9.score(digits, "", it.group.number), affinity(false, it.group.number)) }
+            T9.rank(people + strangers, Match::score, Match::affinity)
                 .distinctBy { DeliveryRules.last10(it.number) }
-                .sortedByDescending { it.score }
                 .take(3)
         }
     }

@@ -24,4 +24,23 @@ object T9 {
     }
 
     private fun initials(words: List<String>) = words.joinToString("") { it.take(1) }
+
+    /**
+     * How much you deal with a number: each call counts, halving every two weeks, a missed one half as much and
+     * a blocked or declined one not at all; a favourite starts three calls ahead.
+     */
+    fun affinity(starred: Boolean, calls: List<CallEntry>, now: Long): Double = (if (starred) 3.0 else 0.0) + calls.sumOf { c ->
+        val weight = when (c.kind) {
+            Kind.Incoming, Kind.Outgoing -> 1.0
+            Kind.Missed -> 0.5
+            Kind.Declined, Kind.Blocked -> 0.0
+        }
+        weight * Math.pow(0.5, (now - c.date).coerceAtLeast(0) / HALF_LIFE_MS)
+    }
+
+    /** names before numbers, since a typed digit is in nearly every number; then the people you call most, then the closer match */
+    fun <T> rank(items: List<T>, score: (T) -> Int, affinity: (T) -> Double): List<T> =
+        items.filter { score(it) > 0 }.sortedWith(compareByDescending<T> { score(it) > 1 }.thenByDescending(affinity).thenByDescending(score))
+
+    private const val HALF_LIFE_MS = 14 * 24 * 60 * 60_000.0
 }
