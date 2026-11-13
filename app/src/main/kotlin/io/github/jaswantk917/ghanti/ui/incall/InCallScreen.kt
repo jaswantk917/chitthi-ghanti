@@ -180,10 +180,12 @@ fun InCallScreen(
     var face by remember { mutableStateOf(Offset.Unspecified) }
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
         Drifting(connecting = call.phase == Phase.Dialing && !ended, target = face, modifier = Modifier.fillMaxSize())
-        // the face gives up room on short screens and when a note can show; not tied to the keypad,
-        // or the face grows for a frame when the keypad hides the note, then shrinks away
+        // the face gives up room on short screens, when a note can show and when another call waits above;
+        // not tied to the keypad, or the face grows for a frame when the keypad hides the note, then shrinks away
+        val waiting = others.isNotEmpty() && !ended
         val backdrop by animateDpAsState(
-            (maxHeight - 720.dp - if (notable) 56.dp else 0.dp).coerceIn(150.dp, 240.dp),
+            (maxHeight - 720.dp - (if (notable) 56.dp else 0.dp) - (if (waiting) 76.dp else 0.dp))
+                .coerceIn(if (waiting) 88.dp else 150.dp, 240.dp),
             MaterialTheme.motionScheme.defaultSpatialSpec(), label = "face",
         )
         Column(
@@ -193,9 +195,11 @@ fun InCallScreen(
             AnimatedVisibility(others.isNotEmpty() && !ended, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                 others.firstOrNull()?.let { OtherCall(it, Modifier.padding(top = 12.dp)) }
             }
-            Spacer(Modifier.height(36.dp))
+            // with a call on hold above, the end button was squeezed to a sliver on a Pixel 9
+            val gap by animateDpAsState(if (waiting) 12.dp else 36.dp, label = "gap")
+            Spacer(Modifier.height(gap))
             Status(call, endedAt)
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(if (waiting) 20.dp else 28.dp))
             // the keypad needs the room, so the face steps aside while it's open
             AnimatedVisibility(
                 visible = !keypad || ended,
