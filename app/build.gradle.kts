@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.jaswantk917.chitthighanti"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 16
-        versionName = "1.16"
+        versionCode = 17
+        versionName = "1.17"
         // Gemini Nano phones are all arm64
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

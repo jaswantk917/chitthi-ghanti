@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.17:
+
+```
+The keypad suggests the people you call most first, and the number you actually use for them.
+```
+
 1.16:
 
 ```
