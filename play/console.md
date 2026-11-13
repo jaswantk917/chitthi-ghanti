@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.16:
+
+```
+With a call on hold, the end call button is full size again.
+```
+
 1.15:
 
 ```
