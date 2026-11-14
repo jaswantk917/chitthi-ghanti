@@ -1,6 +1,10 @@
 package io.github.jaswantk917.ghanti.ui.incall
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.net.Uri
 import android.telecom.Call
 import android.telecom.CallAudioState
 import androidx.activity.ComponentActivity
@@ -9,9 +13,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -49,7 +56,24 @@ class InCallScreenTest {
         return unsafeClass.getMethod("allocateInstance", Class::class.java).invoke(unsafe, Call::class.java) as Call
     }
 
-    private fun show(call: CallUi, others: List<CallUi>, fontScale: Float = 1f) {
+    private val earpiece = CallAudioState(false, CallAudioState.ROUTE_EARPIECE, CallAudioState.ROUTE_EARPIECE or CallAudioState.ROUTE_SPEAKER)
+
+    /** a stand-in contact photo: sky, a head and shoulders, edge to edge like a real one */
+    private fun photo(): Uri {
+        val bitmap = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        Canvas(bitmap).apply {
+            drawColor(Color.rgb(120, 190, 220))
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = Color.rgb(170, 30, 40); drawCircle(200f, 470f, 190f, paint)
+            paint.color = Color.rgb(150, 100, 70); drawCircle(200f, 190f, 95f, paint)
+            paint.color = Color.rgb(40, 30, 30); drawCircle(200f, 120f, 70f, paint)
+        }
+        val file = File(rule.activity.cacheDir, "face.png")
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return Uri.fromFile(file)
+    }
+
+    private fun show(call: CallUi, others: List<CallUi>, fontScale: Float = 1f, audio: CallAudioState = speaker) {
         rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
         rule.mainClock.autoAdvance = false
         rule.setContent {
@@ -57,12 +81,14 @@ class InCallScreenTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 GhantiTheme(amoled = false) {
                     CompositionLocalProvider(LocalBlur provides GhantiApp.instance.prefs.settings.value.blur) {
-                        InCallScreen(call, others, speaker, endedAt = null, noting = false, onNoting = {}, onAddCall = {})
+                        InCallScreen(call, others, audio, endedAt = null, noting = false, onNoting = {}, onAddCall = {})
                     }
                 }
             }
         }
         rule.mainClock.advanceTimeBy(3_000)
+        // the photo loads off the main thread
+        repeat(10) { Thread.sleep(100); rule.mainClock.advanceTimeBy(100) }
     }
 
     private fun snap(name: String) {
@@ -89,5 +115,27 @@ class InCallScreenTest {
         show(bistro, emptyList())
         snap("one-call")
         rule.onNodeWithContentDescription("End call").assertHeightIsAtLeast(72.dp)
+    }
+
+    @Test
+    fun aPhotoFillsTheShapeOnTheEarpiece() {
+        show(call(Phase.Active, "+919876500002", Person("Ravi", photo()), null, null), emptyList(), audio = earpiece)
+        snap("photo-earpiece")
+        rule.onNodeWithContentDescription("End call").assertHeightIsAtLeast(72.dp)
+    }
+
+    @Test
+    fun aPhotoFillsTheSunburstOnSpeaker() {
+        show(call(Phase.Active, "+919876500002", Person("Ravi", photo()), null, null), emptyList())
+        snap("photo-speaker")
+    }
+
+    @Test
+    fun aNumberWithAWaitAsksBeforeSendingTheRest() {
+        show(call(Phase.Active, "+911800123456", null, null, null).copy(waitingTones = "1234"), emptyList(), audio = earpiece)
+        rule.onNodeWithText("Send tones?").assertIsDisplayed()
+        rule.onNodeWithText("1234").assertIsDisplayed()
+        val dir = File(rule.activity.getExternalFilesDir(null), "screens").apply { mkdirs() }
+        File(dir, "tones.png").outputStream().use { rule.onNode(isDialog()).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

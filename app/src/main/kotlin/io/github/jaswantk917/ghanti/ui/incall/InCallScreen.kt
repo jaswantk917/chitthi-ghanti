@@ -79,6 +79,7 @@ import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -100,12 +101,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -176,6 +179,15 @@ fun InCallScreen(
     val canNote = !keypad && notable && !call.isConference
     // back closes the keypad before it leaves the call screen
     BackHandler(enabled = keypad) { keypad = false }
+    call.waitingTones?.let { waiting ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Send tones?") },
+            text = { Text(waiting, style = MaterialTheme.typography.headlineSmall) },
+            confirmButton = { TextButton(onClick = { haptics.play(Haptic.Tap); Calls.sendTones(call.call, true) }) { Text("Send") } },
+            dismissButton = { TextButton(onClick = { Calls.sendTones(call.call, false) }) { Text("Don't send") } },
+        )
+    }
 
     var face by remember { mutableStateOf(Offset.Unspecified) }
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
@@ -214,6 +226,8 @@ fun InCallScreen(
                         Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }.onGloballyPositioned { face = it.boundsInRoot().center },
                         contentAlignment = Alignment.Center,
                     ) {
+                        // a photo fills the shape, so the shape is its living border; a monogram keeps its own shape inside
+                        val framed = call.participants.isEmpty() && call.person?.photo != null
                         LivingBackdrop(
                             ringing = call.phase == Phase.Ringing && !ended,
                             connecting = call.phase == Phase.Dialing && !ended,
@@ -221,21 +235,23 @@ fun InCallScreen(
                             still = ended || audio?.isMuted == true || call.phase == Phase.Holding,
                             paused = ended || call.phase == Phase.Holding,
                             size = backdrop,
-                        )
-                        AnimatedContent(
-                            call.participants,
-                            transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.85f)) togetherWith (fadeOut() + scaleOut(targetScale = 1.1f)) },
-                            contentKey = { it.isNotEmpty() },
-                            label = "faces",
-                        ) { participants ->
-                            if (participants.isNotEmpty()) Faces(participants, backdrop * 0.55f)
-                            else Avatar(
-                                name = call.person?.name,
-                                photo = call.person?.photo,
-                                seed = call.number,
-                                size = backdrop * 0.55f,
-                                hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
-                            )
+                            framed = framed,
+                        ) {
+                            AnimatedContent(
+                                call.participants,
+                                transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.85f)) togetherWith (fadeOut() + scaleOut(targetScale = 1.1f)) },
+                                contentKey = { it.isNotEmpty() },
+                                label = "faces",
+                            ) { participants ->
+                                if (participants.isNotEmpty()) Faces(participants, backdrop * 0.55f)
+                                else Avatar(
+                                    name = call.person?.name,
+                                    photo = call.person?.photo,
+                                    seed = call.number,
+                                    size = backdrop * (if (framed) 0.82f else 0.55f),
+                                    hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(20.dp))
@@ -507,7 +523,16 @@ private fun NoteEntry(note: String, onClick: () -> Unit, modifier: Modifier = Mo
  * it opens into a sunburst, muted it stops breathing, on hold it also stops turning and dims.
  */
 @Composable
-private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean, still: Boolean, paused: Boolean, size: androidx.compose.ui.unit.Dp) {
+private fun LivingBackdrop(
+    ringing: Boolean,
+    connecting: Boolean,
+    loud: Boolean,
+    still: Boolean,
+    paused: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    framed: Boolean,
+    face: @Composable () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val ripple by rememberInfiniteTransition(label = "ripple").animateFloat(
         0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ripple",
@@ -533,8 +558,9 @@ private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean,
     }
     val shape = remember { Morph(MaterialShapes.Cookie9Sided, MaterialShapes.Sunny) }
     val path = remember { Path() }
+    val inner = remember { Path() }
     val matrix = remember { Matrix() }
-    Canvas(Modifier.size(size)) {
+    Box(Modifier.size(size).drawWithContent {
         val side = this.size.minDimension
         val center = Offset(side / 2f, side / 2f)
         if (ringing) {
@@ -550,15 +576,27 @@ private fun LivingBackdrop(ringing: Boolean, connecting: Boolean, loud: Boolean,
         val g = gather.value
         // a soft swell as the drifters land
         val swell = 1f + 0.07f * sin(g * PI.toFloat()) + 0.03f * breath * sin(clock * 2f * PI.toFloat() / 6.4f)
-        path.rewind()
-        shape.toPath(open, path)
-        matrix.reset()
+        // turned by the path, not the canvas, so the photo it clips stays upright
+        fun turned(into: Path, extent: Float) {
+            into.rewind()
+            shape.toPath(open, into)
+            matrix.reset()
+            matrix.translate(center.x, center.y)
+            matrix.rotateZ(clock * 15f)
+            matrix.translate(-extent / 2f, -extent / 2f)
+            matrix.scale(extent, extent)
+            into.transform(matrix)
+        }
         val blob = side * 0.82f * swell
-        matrix.translate((side - blob) / 2f, (side - blob) / 2f)
-        matrix.scale(blob, blob)
-        path.transform(matrix)
-        rotate(clock * 15f, center) { drawPath(path, scheme.primaryContainer.copy(alpha = dim)) }
-    }
+        turned(path, blob)
+        drawPath(path, scheme.primaryContainer.copy(alpha = dim))
+        if (framed) {
+            turned(inner, blob * 0.9f)
+            clipPath(inner) { this@drawWithContent.drawContent() }
+        } else {
+            drawContent()
+        }
+    }, contentAlignment = Alignment.Center) { face() }
 }
 
 /**
