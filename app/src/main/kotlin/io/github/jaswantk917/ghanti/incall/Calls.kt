@@ -38,6 +38,8 @@ data class CallUi(
     val canSplit: Boolean = false,
     /** a participant that can be dropped while the rest carry on */
     val canDrop: Boolean = false,
+    /** a number with a wait (;) stopped here: the tones still to send once you say so */
+    val waitingTones: String? = null,
 ) {
     val title: String get() = if (participants.isNotEmpty()) names(participants.map { it.title }) else person?.name ?: networkName ?: number.ifBlank { "Private number" }
     val silenced get() = outcome?.rang == false
@@ -57,6 +59,7 @@ object Calls {
     private var context: Context? = null
     /** a conference's names, kept for its "Call ended" beat: the people leave before the conference does */
     private val conferenceNames = HashMap<Call, String>()
+    private val waitingTones = HashMap<Call, String>()
     private val _calls = MutableStateFlow<List<CallUi>>(emptyList())
     val calls: StateFlow<List<CallUi>> = _calls
     private val _audio = MutableStateFlow<CallAudioState?>(null)
@@ -86,6 +89,7 @@ object Calls {
             if (gone.connectedAt > 0 && !yours) service?.let(CallBuzz::ended)
         }
         conferenceNames.remove(call)
+        waitingTones.remove(call)
         publish()
     }
 
@@ -144,6 +148,16 @@ object Calls {
     }
     /** take one person out of the conference to talk privately; the rest go on hold */
     fun split(call: Call) = call.splitFromConference()
+    internal fun waitForTones(call: Call, remaining: String) {
+        waitingTones[call] = remaining
+        publish()
+    }
+    /** false drops the rest of the number's tones */
+    fun sendTones(call: Call, send: Boolean) {
+        waitingTones.remove(call)
+        call.postDialContinue(send)
+        publish()
+    }
     fun chooseSim(call: Call, sim: PhoneAccountHandle) = call.phoneAccountSelected(sim, false)
 
     private fun numberOf(call: Call) = call.details.handle?.schemeSpecificPart.orEmpty()
@@ -179,6 +193,7 @@ object Calls {
             canDrop = d.can(Call.Details.CAPABILITY_DISCONNECT_FROM_CONFERENCE),
             isConference = d.hasProperty(Call.Details.PROPERTY_CONFERENCE),
             sims = sims,
+            waitingTones = waitingTones[call],
         )
     }
 }

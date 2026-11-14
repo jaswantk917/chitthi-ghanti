@@ -108,7 +108,8 @@ fun KeypadSheet(
                         // holding the number pastes whatever number is on the clipboard
                         .combinedClickable(onClick = {}, onLongClick = {
                             val clip = context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
-                            val number = clip.filter { it.isDigit() || it == '+' }
+                            // pauses (,) and waits (;) carry an extension or menu choices after the number
+                            val number = clip.filter { it.isDigit() || it in "+*#,;" }
                             if (number.isNotEmpty()) { haptics.play(Haptic.Copy); typed = number }
                         }),
                 )

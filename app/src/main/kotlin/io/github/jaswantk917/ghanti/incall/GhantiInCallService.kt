@@ -16,6 +16,7 @@ class GhantiInCallService : InCallService() {
         override fun onConferenceableCallsChanged(call: Call, conferenceableCalls: MutableList<Call>) = changed()
         override fun onParentChanged(call: Call, parent: Call?) = changed()
         override fun onChildrenChanged(call: Call, children: MutableList<Call>) = changed()
+        override fun onPostDialWait(call: Call, remainingPostDialSequence: String) = Calls.waitForTones(call, remainingPostDialSequence)
     }
 
     override fun onCreate() {
