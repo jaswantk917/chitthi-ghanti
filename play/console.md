@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.18:
+
+```
+SMS links from websites and other apps open in Tring, with their message already typed. The headset call button opens Tring too.
+```
+
 1.17:
 
 ```
