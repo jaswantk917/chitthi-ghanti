@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.19:
+
+```
+A contact's photo now fills the shape on the call screen. Replies go out on the SIM the conversation is on. Numbers with an extension ask before sending the rest.
+```
+
 1.18:
 
 ```
