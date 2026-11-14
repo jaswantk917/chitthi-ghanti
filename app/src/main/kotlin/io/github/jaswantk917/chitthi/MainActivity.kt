@@ -149,20 +149,24 @@ class MainActivity : ComponentActivity() {
             push(Route.Thread(it))
             return
         }
-        val text = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        val extra = intent.getStringExtra("sms_body") ?: intent.getStringExtra(Intent.EXTRA_TEXT)
         val data = intent.data
         when {
             data != null && data.scheme in setOf("sms", "smsto", "mms", "mmsto") -> {
-                val number = data.schemeSpecificPart.removePrefix("//").split(',', ';').firstOrNull { it.isNotBlank() }
-                stack.clear()
-                if (number == null) push(Route.NewChat(text))
-                else app.inbox.senderForNumber(Uri.decode(number)).let { push(Route.Thread(it.key, it, text)) }
+                val link = SmsLink.parse(data.encodedSchemeSpecificPart.orEmpty())
+                compose(link.number, extra ?: link.body)
             }
-            intent.action == Intent.ACTION_SEND && text.isNotEmpty() -> {
-                stack.clear()
-                push(Route.NewChat(text))
-            }
+            // older apps' "compose an SMS": a type and an address extra in place of a link
+            intent.type == "vnd.android-dir/mms-sms" ->
+                compose(intent.getStringExtra("address")?.split(',', ';')?.map { it.trim() }?.firstOrNull { it.isNotEmpty() }, extra.orEmpty())
+            intent.action == Intent.ACTION_SEND && !extra.isNullOrEmpty() -> compose(null, extra)
         }
+    }
+
+    private fun compose(number: String?, text: String) {
+        stack.clear()
+        if (number == null) push(Route.NewChat(text))
+        else app.inbox.senderForNumber(number).let { push(Route.Thread(it.key, it, text)) }
     }
 
     /** a saved person opens in Contacts; a stranger's number opens "new contact, or add to someone" */

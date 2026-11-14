@@ -104,8 +104,11 @@ class MainActivity : ComponentActivity() {
 
     /** "dial this number" from anywhere opens the keypad with it typed, never calls by itself */
     private fun handle(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_DIAL || intent?.action == Intent.ACTION_VIEW) {
-            keypad = intent.data?.schemeSpecificPart.orEmpty()
+        val data = intent?.data
+        when {
+            data?.scheme == "tel" -> keypad = data.schemeSpecificPart.orEmpty()
+            // the call log's VIEW and the headset's CALL_BUTTON open the app as it is
+            intent?.action == Intent.ACTION_DIAL && data == null -> keypad = ""
         }
     }
 
