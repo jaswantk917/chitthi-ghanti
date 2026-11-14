@@ -150,7 +150,7 @@ object SmsStore {
             put(Sms.SUBSCRIPTION_ID, subId)
         })
 
-    fun insertOutgoing(context: Context, address: String, body: String): Uri? =
+    fun insertOutgoing(context: Context, address: String, body: String, subId: Int?): Uri? =
         context.contentResolver.insert(Sms.CONTENT_URI, ContentValues().apply {
             put(Sms.ADDRESS, address)
             put(Sms.BODY, body)
@@ -159,7 +159,20 @@ object SmsStore {
             put(Sms.SEEN, 1)
             put(Sms.TYPE, Sms.MESSAGE_TYPE_OUTBOX)
             put(Sms.THREAD_ID, Telephony.Threads.getOrCreateThreadId(context, address))
+            subId?.let { put(Sms.SUBSCRIPTION_ID, it) }
         })
+
+    /** the SIM the conversation with [address] last went through, sent or received */
+    fun lastSim(context: Context, address: String): Int? = try {
+        val thread = Telephony.Threads.getOrCreateThreadId(context, address)
+        context.contentResolver.query(
+            Sms.CONTENT_URI, arrayOf(Sms.SUBSCRIPTION_ID),
+            "${Sms.THREAD_ID} = ? AND ${Sms.SUBSCRIPTION_ID} >= 0", arrayOf(thread.toString()), "${Sms.DATE} DESC LIMIT 1",
+        )?.use { c -> if (c.moveToFirst()) c.getInt(0) else null }
+    } catch (e: Exception) {
+        Log.w(TAG, "no SIM for $address", e)
+        null
+    }
 
     fun setType(context: Context, uri: Uri, type: Int) {
         context.contentResolver.update(uri, ContentValues().apply { put(Sms.TYPE, type) }, null, null)

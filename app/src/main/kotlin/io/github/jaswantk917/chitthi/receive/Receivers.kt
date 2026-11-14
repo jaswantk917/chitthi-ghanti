@@ -12,7 +12,6 @@ import android.net.Uri
 import android.os.IBinder
 import android.provider.Telephony
 import android.provider.Telephony.Mms
-import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -107,7 +106,7 @@ class MmsPushReceiver : BroadcastReceiver() {
             Intent(context, MmsDownloadedReceiver::class.java).putExtra(MmsDownloadedReceiver.EXTRA_FILE, file.absolutePath),
             PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ONE_SHOT,
         )
-        context.getSystemService(SmsManager::class.java).createForSubscriptionId(subId)
+        SmsSender.forSim(context, subId)
             .downloadMultimediaMessage(context, location, uri, null, downloaded)
     }
 

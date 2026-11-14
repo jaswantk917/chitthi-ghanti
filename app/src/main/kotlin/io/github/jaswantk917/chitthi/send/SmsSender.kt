@@ -6,8 +6,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Telephony.Sms
 import android.telephony.SmsManager
+import android.telephony.SubscriptionManager
 import io.github.jaswantk917.chitthi.data.SmsStore
 import io.github.jaswantk917.chitthi.notify.Notifier
 import java.util.concurrent.atomic.AtomicInteger
@@ -20,11 +22,13 @@ object SmsSender {
      * otherwise the system records what it sends.
      */
     fun send(context: Context, addresses: List<String>, text: String) {
-        val sms = context.getSystemService(SmsManager::class.java)
         val isDefault = SmsStore.isDefault(context)
         addresses.forEach { address ->
+            // a reply goes out on the SIM the conversation is on, while that SIM is still in the phone
+            val sim = SmsStore.lastSim(context, address)?.takeIf { SubscriptionManager.getSlotIndex(it) != SubscriptionManager.INVALID_SIM_SLOT_INDEX }
+            val sms = forSim(context, sim)
             val parts = sms.divideMessage(text)
-            val row = if (isDefault) SmsStore.insertOutgoing(context, address, text) else null
+            val row = if (isDefault) SmsStore.insertOutgoing(context, address, text, sim) else null
             val sent = ArrayList(parts.indices.map { i ->
                 PendingIntent.getBroadcast(
                     context, requestCodes.incrementAndGet(),
@@ -37,6 +41,14 @@ object SmsSender {
             })
             sms.sendMultipartTextMessage(address, null, parts, sent, null)
         }
+    }
+
+    /** null: the phone's default SMS SIM. The SmsManager service and createForSubscriptionId arrived in Android 12; minSdk is 10 */
+    @Suppress("DEPRECATION")
+    fun forSim(context: Context, subId: Int?): SmsManager = when {
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> if (subId == null) SmsManager.getDefault() else SmsManager.getSmsManagerForSubscriptionId(subId)
+        subId == null -> context.getSystemService(SmsManager::class.java)
+        else -> context.getSystemService(SmsManager::class.java).createForSubscriptionId(subId)
     }
 }
 
