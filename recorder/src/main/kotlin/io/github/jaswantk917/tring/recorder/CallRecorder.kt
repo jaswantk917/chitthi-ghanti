@@ -34,9 +34,13 @@ import kotlin.concurrent.thread
  * speaker is near the microphone, since only system apps may record the call line itself.
  */
 class CallRecorder : AccessibilityService() {
-    private var recorder: Capture? = null
-    private var output: ParcelFileDescriptor? = null
-    private var saved: Uri? = null
+    /** one call's recording: its file in the media library, open for writing, and the microphones */
+    private class Take(val uri: Uri, val output: ParcelFileDescriptor, val capture: Capture)
+
+    // Only the call being recorded. A finished call keeps its own Take while it mixes down, which
+    // can outlast the next call's start: sharing one slot, a 23-minute call's mixdown published the
+    // next call's empty file, hid its own, and left the next call's microphone on (1.8, 2026-11-21).
+    private var take: Take? = null
     private val audio by lazy { getSystemService(AudioManager::class.java) }
     private val callEnded = AudioManager.OnModeChangedListener { mode -> if (mode == AudioManager.MODE_NORMAL) stop() }
 
@@ -48,6 +52,13 @@ class CallRecorder : AccessibilityService() {
 
     override fun onServiceConnected() {
         Updates.schedule(this)
+        val connected = System.currentTimeMillis()
+        // whatever an earlier run left half done: recordings published or dropped, raw sound deleted
+        thread(name = "recover") {
+            runCatching { Recordings.recoverPending(this, before = connected) }.onFailure { Log.w(TAG, "couldn't recover recordings", it) }
+            (getExternalFilesDir(null) ?: cacheDir).listFiles { file -> file.name.startsWith("call") && file.lastModified() < connected }
+                ?.forEach { it.delete() }
+        }
         // Tring is another app, so the receiver must be exported; it only records while a call holds the audio
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(commands, IntentFilter(ACTION_RECORD), RECEIVER_EXPORTED)
@@ -67,7 +78,7 @@ class CallRecorder : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     private fun start(who: String) {
-        if (recorder != null) return report(STATE_RECORDING)
+        if (take != null) return report(STATE_RECORDING)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return report(STATE_NEEDS_SETUP)
         if (audio.mode != AudioManager.MODE_IN_CALL && audio.mode != AudioManager.MODE_IN_COMMUNICATION) return report(STATE_OFF)
         val stamp = SimpleDateFormat("d MMM, h.mm a", Locale.getDefault()).format(Date())
@@ -77,47 +88,46 @@ class CallRecorder : AccessibilityService() {
             put(MediaStore.Audio.Media.RELATIVE_PATH, folder())
             put(MediaStore.Audio.Media.IS_PENDING, 1)
         }
+        var uri: Uri? = null
+        var output: ParcelFileDescriptor? = null
         try {
-            val uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
-            saved = uri
-            output = contentResolver.openFileDescriptor(uri, "w")
-            // the app's own folder on shared storage, readable over USB: the last call's raw sound and the per-call numbers
+            uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
+            output = contentResolver.openFileDescriptor(uri, "w") ?: error("no file for $uri")
+            // the app's own folder on shared storage, readable over USB: the last call's raw sound and the per-call numbers;
+            // each call has its own scratch file, since the last one can still be mixing down
             val own = getExternalFilesDir(null)
-            val capture = Capture(File(own ?: cacheDir, "call.pcm"), keep = own?.let { File(it, "last-call.pcm") }, stats = own?.let { File(it, "calls.log") })
-            if (!capture.start()) {
-                release(keep = false)
-                return report(STATE_OFF)
-            }
-            recorder = capture
+            val capture = Capture(
+                File(own ?: cacheDir, "call-${System.currentTimeMillis()}.pcm"),
+                keep = own?.let { File(it, "last-call.pcm") }, stats = own?.let { File(it, "calls.log") },
+            )
+            if (!capture.start()) error("no microphone")
+            take = Take(uri, output, capture)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.addOnModeChangedListener(mainExecutor, callEnded)
             report(STATE_RECORDING)
         } catch (e: Exception) {
             Log.w(TAG, "couldn't start recording", e)
-            release(keep = false)
+            runCatching { output?.close() }
+            uri?.let { runCatching { contentResolver.delete(it, null, null) } }
             report(STATE_OFF)
         }
     }
 
     private fun stop() {
-        val capture = recorder ?: return
-        recorder = null
+        val call = take ?: return
+        take = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.removeOnModeChangedListener(callEnded)
         report(STATE_OFF)
-        // the mixdown reads the whole call back, seconds of work, so it runs off the main thread
+        // the mixdown reads the whole call back, a minute or more for a long call, so it runs off the main thread
         thread(name = "mixdown") {
             // a call ended before any sound came through leaves nothing worth keeping
-            val turns = saved?.let { Notes(this).turnsFile(ContentUris.parseId(it)) }
-            val kept = output?.let { capture.finish(it.fileDescriptor, turns) } == true
-            release(keep = kept)
+            val kept = call.capture.finish(call.output.fileDescriptor, Notes(this).turnsFile(ContentUris.parseId(call.uri)))
+            release(call, keep = kept)
         }
     }
 
-    private fun release(keep: Boolean) {
-        recorder = null
-        runCatching { output?.close() }
-        output = null
-        val uri = saved ?: return
-        saved = null
+    private fun release(call: Take, keep: Boolean) {
+        runCatching { call.output.close() }
+        val uri = call.uri
         if (keep) {
             contentResolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
             notifySaved(uri)

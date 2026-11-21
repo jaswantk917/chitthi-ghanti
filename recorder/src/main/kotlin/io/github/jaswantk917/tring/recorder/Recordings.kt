@@ -1,9 +1,12 @@
 package io.github.jaswantk917.tring.recorder
 
+import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 
@@ -44,6 +47,43 @@ object Recordings {
             }
         }
         return found
+    }
+
+    /**
+     * Recordings an earlier run left unfinished: a crash mid-call, or 1.8 mixing up two calls.
+     * Each one with sound is published, and each empty one deleted. Only those started before
+     * [before], so a call recording right now is left alone.
+     */
+    fun recoverPending(context: Context, before: Long) {
+        val resolver = context.contentResolver
+        val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Audio.Media.DATE_ADDED} < ?"
+        val args = arrayOf(folder() + "%", (before / 1_000).toString())
+        val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.IS_PENDING)
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            resolver.query(
+                collection, projection,
+                Bundle().apply {
+                    putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                    putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+                    putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+                },
+                null,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            resolver.query(MediaStore.setIncludePending(collection), projection, selection, args, null)
+        }
+        cursor?.use {
+            while (it.moveToNext()) {
+                val uri = ContentUris.withAppendedId(collection, it.getLong(0))
+                // the media library's own size can lag a file that was never closed properly, so the file itself is asked
+                val bytes = runCatching { resolver.openFileDescriptor(uri, "r")?.use { file -> file.statSize } }.getOrNull() ?: 0L
+                when {
+                    bytes == 0L -> resolver.delete(uri, null, null)
+                    it.getInt(1) == 1 -> resolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
+                }
+            }
+        }
     }
 
     /** "Asha · 21 Nov, 3.16 pm.m4a" → "Asha" */
