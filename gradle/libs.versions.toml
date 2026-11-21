@@ -9,6 +9,8 @@ lifecycle = "2.9.4"
 coil = "2.7.0"
 graphicsShapes = "1.0.1"
 mlkitGenaiPrompt = "1.0.0-beta4"
+appfunctions = "1.0.0"
+ksp = "2.3.14"
 work = "2.10.5"
 kotlinxCoroutines = "1.11.0"
 junit = "4.13.2"
@@ -36,6 +38,8 @@ compose-material-icons-extended = { module = "androidx.compose.material:material
 graphics-shapes = { module = "androidx.graphics:graphics-shapes", version.ref = "graphicsShapes" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 mlkit-genai-prompt = { module = "com.google.mlkit:genai-prompt", version.ref = "mlkitGenaiPrompt" }
+appfunctions = { module = "androidx.appfunctions:appfunctions", version.ref = "appfunctions" }
+appfunctions-compiler = { module = "androidx.appfunctions:appfunctions-compiler", version.ref = "appfunctions" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
@@ -49,3 +53,4 @@ org-json = { module = "org.json:json", version.ref = "orgJson" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

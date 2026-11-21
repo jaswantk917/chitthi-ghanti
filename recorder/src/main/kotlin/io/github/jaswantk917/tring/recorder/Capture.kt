@@ -49,12 +49,12 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         return true
     }
 
-    /** stops the microphones and writes the mixed call to [output]; false when nothing was recorded */
-    fun finish(output: FileDescriptor): Boolean {
+    /** stops the microphones and writes the mixed call to [output], and who talked when to [turns]; false when nothing was recorded */
+    fun finish(output: FileDescriptor, turns: File? = null): Boolean {
         running = false
         worker.join(5_000)
         return try {
-            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output)
+            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns)
         } catch (e: Exception) {
             Log.w(TAG, "mixdown failed", e)
             false
@@ -130,7 +130,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         }
     }
 
-    private fun mixAndEncode(output: FileDescriptor): Boolean {
+    private fun mixAndEncode(output: FileDescriptor, turns: File?): Boolean {
         // 1: how loud each microphone is, frame by frame, to follow whoever is talking between them
         val bottomEnergy = ArrayList<Float>()
         val topEnergy = ArrayList<Float>()
@@ -172,6 +172,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
             val talking = BooleanArray(shapes.size) { denoised.speechAt(it * Mixdown.FRAME + Mixdown.FRAME / 2) }
             val caller = Voices.callerWeights(shapes, talking)
             report(weights, denoised, shapes, talking, caller)
+            turns?.let { runCatching { Turns.write(Turns.from(caller, talking), it) } }
 
             // 5: each voice levelled on its own, the caller's thinner sound lifted where speech is made out;
             // the gates sit over what's left of the hiss after cleaning

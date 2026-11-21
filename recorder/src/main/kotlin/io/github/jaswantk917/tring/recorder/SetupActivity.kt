@@ -3,6 +3,7 @@ package io.github.jaswantk917.tring.recorder
 import android.Manifest
 import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -12,21 +13,24 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/** Three switches to flip once; after that the recorder has no screen of its own, only Tring's Record button. */
+/** Three switches to flip once; reached from the recordings screen until they are all on. */
 class SetupActivity : Activity() {
     private lateinit var steps: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        steps = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val pad = dp(24)
-            setPadding(pad, dp(56), pad, pad)
+        steps = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Android 15 draws every app edge to edge: keep the steps clear of the status and navigation bars
+        steps.setOnApplyWindowInsetsListener { view, insets ->
+            val bars = insets.getInsets(WindowInsets.Type.systemBars())
+            view.setPadding(dp(24), bars.top + dp(32), dp(24), bars.bottom + dp(24))
+            insets
         }
         setContentView(ScrollView(this).apply { addView(steps) })
     }
@@ -80,11 +84,7 @@ class SetupActivity : Activity() {
         steps.addView(row)
     }
 
-    private fun serviceOn(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
-        val me = ComponentName(this, CallRecorder::class.java)
-        return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
-    }
+    private fun serviceOn() = recorderOn(this)
 
     private fun granted(permission: String) = checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
@@ -107,4 +107,11 @@ class SetupActivity : Activity() {
     private companion object {
         const val REPO = "https://github.com/jaswantk917/tring-recorder"
     }
+}
+
+/** whether Tring Recorder is switched on in Accessibility */
+fun recorderOn(context: Context): Boolean {
+    val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+    val me = ComponentName(context, CallRecorder::class.java)
+    return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
 }

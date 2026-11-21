@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- only to ask GitHub once a day whether a newer version is out -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- to tell Tring (or its debug build) whether a recording started -->
@@ -18,13 +22,38 @@
         android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
         <activity
-            android:name=".SetupActivity"
-            android:exported="true">
+            android:name=".RecordingsActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".SetupActivity"
+            android:exported="false"
+            android:theme="@style/Setup" />
+
+        <!-- who you talked to lately and what about, for assistants (Android 16+) -->
+        <service
+            android:name=".RecorderFunctionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_APP_FUNCTION_SERVICE"
+            tools:targetApi="36">
+            <property
+                android:name="android.app.appfunctions.schema"
+                android:value="app_functions_schema.xsd" />
+            <property
+                android:name="android.app.appfunctions.v2"
+                android:value="recorder_app_functions.xml" />
+            <intent-filter>
+                <action android:name="android.app.appfunctions.AppFunctionService" />
+            </intent-filter>
+        </service>
 
         <!-- an Accessibility service is the only kind of app Android lets use the microphone during a call -->
         <service

@@ -6,6 +6,8 @@ Android lets only the phone's own system app record the call line. Any other app
 
 Once it's installed and switched on, Tring's call screen gets a **Record** button, and Tring's settings get **Record calls by themselves**: every call, strangers only, or the people you pick.
 
+Open the recorder to find your calls: play them, read what was said as a chat between *You* and *Them*, and see a few lines on what each call was about, plus **Lately**, what you've been talking about across your recent calls. All of it is made on the phone.
+
 ## Set it up
 
 You need Tring as your phone app (its Ghanti side), on Android 10 or newer.
@@ -22,17 +24,22 @@ You need Tring as your phone app (its Ghanti side), on Android 10 or newer.
    3. Repeat step 3.
 5. Tring Recorder says **All set**. Close Tring from your recent apps once and open it again, so it finds the recorder.
 
-To test it, call someone, tap **Record**, say a few words each, and hang up. A *Call recorded* note appears; tap it to play the recording.
+To test it, call someone, tap **Record**, say a few words each, and hang up. A *Call recorded* note appears; tap it to play the recording and read it.
+
+**New versions:** the recorder checks GitHub once a day and tells you when one is out. Tap **Download**, open the file, and install it over the old one; your recordings, transcripts and summaries stay. The Play Protect block in step 1 can come up again.
 
 ## What to expect
 
 - **Where recordings go:** `Recordings/Tring` on Android 12 and newer, `Music/Tring recordings` before that. Each one is named after the person and the time.
 - **How they sound:** the recorder hears the room, not the phone line. You come through clearly. The other person reaches the microphone from the earpiece or speaker, so after the call the recorder tells the two of you apart and brings them up to your loudness. On speaker they sound close to natural. On the earpiece they're quieter to begin with and come out thinner, like a phone voice.
 - **Your phone's own call recorder**, if it has one, records the line itself and will always sound better. Use this where there isn't one.
+- **Transcripts** come from [Shruti](#credits), a speech model for Hindi, English and Hinglish that runs inside the app, offline, on any phone with a 64-bit ARM processor (nearly every phone from the last several years). Calls are transcribed while the app is open, newest first, and each line is marked *You* or *Them* from the recorder's own split of who was talking. Calls recorded before version 1.7 have no such split, so their lines aren't named.
+- **Summaries** use Gemini Nano, Google's on-device model, which only some phones have (Pixel 9 and newer, and a few others). Android lets it work only for the app on screen, so they're made while the recorder is open. Without Gemini Nano you get transcripts and no summaries.
+- **For assistants:** on Android 16 and newer the recorder offers two [app functions](https://developer.android.com/ai/appfunctions), *list recent calls* and *what I've been talking about*, which read what is already saved. Google's Gemini calls app functions only from apps it has approved, and this one isn't, so for now they're for assistants that use the system's app-function command, or `adb shell cmd app_function`.
 
 ## Privacy
 
-- It has no internet permission. Recordings never leave your phone unless you share them.
+- Its only use of the internet is asking GitHub once a day for the newest version number. Recordings, transcripts and summaries never leave your phone unless you share them.
 - It can't read your screen. Its Accessibility service asks for no window content, only for being allowed the microphone during a call.
 - It records only when Tring asks it to: your tap, or the auto-record setting you chose.
 - Recording calls is legal in some places and needs everyone's consent in others. Know the rule where you are, and tell people when they're being recorded.
@@ -44,3 +51,7 @@ Switch Tring Recorder off in Accessibility, or uninstall it. Tring's Record butt
 ## Source
 
 The code lives in [`recorder/`](https://github.com/jaswantk917/chitthi-ghanti/tree/main/recorder) in Tring's repository, beside the app it works with.
+
+## Credits
+
+Transcripts use **Shruti** by Udgam Labs, a version of [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle) retrained on Hindi, English and Hinglish speech, running in the [Cactus needle](https://huggingface.co/Cactus-Compute/needle3) engine. Both are under the Apache License 2.0; the full notice, with the training data's credits, ships in the app and is in [`recorder/src/main/assets/shruti/NOTICE`](https://github.com/jaswantk917/chitthi-ghanti/blob/main/recorder/src/main/assets/shruti/NOTICE).

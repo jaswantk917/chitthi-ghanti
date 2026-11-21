@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -46,6 +47,7 @@ class CallRecorder : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        Updates.schedule(this)
         // Tring is another app, so the receiver must be exported; it only records while a call holds the audio
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(commands, IntentFilter(ACTION_RECORD), RECEIVER_EXPORTED)
@@ -104,7 +106,8 @@ class CallRecorder : AccessibilityService() {
         // the mixdown reads the whole call back, seconds of work, so it runs off the main thread
         thread(name = "mixdown") {
             // a call ended before any sound came through leaves nothing worth keeping
-            val kept = output?.let { capture.finish(it.fileDescriptor) } == true
+            val turns = saved?.let { Notes(this).turnsFile(ContentUris.parseId(it)) }
+            val kept = output?.let { capture.finish(it.fileDescriptor, turns) } == true
             release(keep = kept)
         }
     }
@@ -129,7 +132,8 @@ class CallRecorder : AccessibilityService() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Saved recordings", NotificationManager.IMPORTANCE_LOW))
         val play = PendingIntent.getActivity(
             this, uri.hashCode(),
-            Intent(Intent.ACTION_VIEW).setDataAndType(uri, "audio/mp4").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent(this, RecordingsActivity::class.java).putExtra(RecordingsActivity.EXTRA_OPEN, ContentUris.parseId(uri))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
         manager.notify(
@@ -137,7 +141,7 @@ class CallRecorder : AccessibilityService() {
             Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Call recorded")
-                .setContentText("In ${folder()} · tap to play")
+                .setContentText("Tap to play it and read what was said")
                 .setContentIntent(play)
                 .setAutoCancel(true)
                 .build(),
@@ -148,8 +152,7 @@ class CallRecorder : AccessibilityService() {
         TRING.forEach { sendBroadcast(Intent(ACTION_STATE).setPackage(it).putExtra(EXTRA_STATE, state)) }
     }
 
-    private fun folder() =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "${Environment.DIRECTORY_RECORDINGS}/Tring" else "${Environment.DIRECTORY_MUSIC}/Tring recordings"
+    private fun folder() = Recordings.folder()
 
     companion object {
         private const val TAG = "CallRecorder"

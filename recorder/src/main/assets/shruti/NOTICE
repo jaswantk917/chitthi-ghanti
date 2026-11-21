@@ -1,0 +1,20 @@
+Shruti
+Copyright 2026 Udgam Labs
+
+This product is a modified version of Cactus Whistle (https://huggingface.co/Cactus-Compute/whistle),
+copyright Cactus Compute, licensed under the Apache License, Version 2.0.
+
+Changes made by Udgam Labs: added 714 Devanagari vocabulary pieces and a Hindi language tag; retrained all model
+weights on Hindi, English and Hinglish speech (2,732 hours) with quantisation-aware training; exported as shruti.cact.
+
+The model runs in the Cactus needle engine (https://huggingface.co/Cactus-Compute/needle3), Apache-2.0, which is not
+included in this repository.
+
+Training data (all licensed for commercial use; credit appreciated):
+- AI4Bharat IndicVoices (CC-BY-4.0), Shrutilipi (CC-BY-4.0), NPTEL (CC-BY-4.0), Kathbath (CC-BY-4.0),
+  Rural_Women_ASR_v2 (CC-BY-4.0)
+- ARTPARK-IISc Vaani (CC-BY-4.0)
+- Mozilla Common Voice 17 (CC0-1.0)
+- LibriSpeech (CC-BY-4.0)
+- Google FLEURS (CC-BY-4.0)
+- MUCS 2021 Hindi-English via dianavdavidson/MUCS-Hinglish (CC-BY-4.0 on the card; original corpus CC-BY-SA-4.0)

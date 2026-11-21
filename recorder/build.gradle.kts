@@ -2,6 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 // Sideloaded, never on Play: Play doesn't allow an Accessibility service whose job is recording calls
@@ -14,9 +16,24 @@ android {
         applicationId = "io.github.jaswantk917.tring.recorder"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Shruti's engine comes prebuilt for arm64 only; its C++ brings no runtime of its own
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_static" } }
     }
+
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // mapped straight from the APK at run time; the 4-bit weights don't compress anyway
+    androidResources { noCompress += "cact" }
 
     val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull
     signingConfigs {
@@ -34,7 +51,7 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -44,10 +61,38 @@ android {
     }
 
     kotlin {
-        compilerOptions { jvmTarget = JvmTarget.fromTarget(libs.versions.java.get()) }
+        compilerOptions {
+            jvmTarget = JvmTarget.fromTarget(libs.versions.java.get())
+            optIn.addAll(
+                "androidx.compose.material3.ExperimentalMaterial3Api",
+                "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+            )
+        }
+    }
+
+    buildFeatures {
+        compose = true
     }
 }
 
 dependencies {
+    implementation(libs.core.ktx)
+    implementation(libs.activity.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
+    implementation(libs.mlkit.genai.prompt)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.appfunctions)
+    implementation(libs.work.runtime)
+    ksp(libs.appfunctions.compiler)
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
