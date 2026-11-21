@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.24:
+
+```
+Settings link to Tring's source code on GitHub.
+```
+
 1.23:
 
 ```

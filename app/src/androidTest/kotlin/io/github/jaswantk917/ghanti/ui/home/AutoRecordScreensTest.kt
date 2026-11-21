@@ -112,6 +112,8 @@ class AutoRecordScreensTest {
         val room = (window.height - bar - footer.bottom) / window.resources.displayMetrics.density
         snap("settings-end", dialog = true)
         assertTrue("only $room dp between the last line and the navigation bar", room >= 32f)
+        rule.onNodeWithText("Source code").assertIsDisplayed()
+        notCut("Tring is open source, on GitHub")
     }
 
     @Test

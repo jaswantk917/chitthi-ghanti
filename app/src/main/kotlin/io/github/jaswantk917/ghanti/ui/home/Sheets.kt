@@ -1,7 +1,9 @@
 package io.github.jaswantk917.ghanti.ui.home
 
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
 import io.github.jaswantk917.ghanti.data.AutoRecord
@@ -171,6 +173,10 @@ fun SettingsSheet(
             }
             Section(Icons.Rounded.BlurOn, "Blur under the bars", "Lists melt into the edges. Heavy on some phones") {
                 Switch(settings.blur, onCheckedChange = { on -> toggle(on); onChange { it.copy(blur = on) } })
+            }
+            Section(Icons.Rounded.Code, "Source code", "Tring is open source, on GitHub") {
+                val links = LocalUriHandler.current
+                TextButton(onClick = { haptics.play(Haptic.Tap); links.openUri("https://github.com/jaswantk917/chitthi-ghanti") }) { Text("Open") }
             }
             Spacer(Modifier.height(12.dp))
             Text(

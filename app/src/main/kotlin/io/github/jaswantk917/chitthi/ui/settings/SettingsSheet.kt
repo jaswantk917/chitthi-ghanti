@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Palette as PaletteIcon
@@ -43,6 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -170,6 +172,10 @@ fun SettingsSheet(
                         onChange { it.copy(useNano = on) }
                     })
                 }
+            }
+            Section(Icons.Rounded.Code, "Source code", "Tring is open source, on GitHub") {
+                val links = LocalUriHandler.current
+                TextButton(onClick = { haptics.play(Haptic.Tap); links.openUri("https://github.com/jaswantk917/chitthi-ghanti") }) { Text("Open") }
             }
             Spacer(Modifier.height(12.dp))
             Text(
