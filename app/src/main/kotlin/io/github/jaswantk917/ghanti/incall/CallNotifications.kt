@@ -63,10 +63,13 @@ object CallNotifications {
         }
     }
 
-    private fun build(context: Context, call: CallUi): android.app.Notification {
+    internal fun build(context: Context, call: CallUi): android.app.Notification {
+        // the number is how Do Not Disturb's "repeat callers" knows someone called before: Android
+        // remembers callers from the phone app's call notifications, and a name alone matched no one
         val person = Person.Builder()
             .setName(call.title)
             .setImportant(call.person != null)
+            .apply { if (call.number.isNotBlank()) setUri(Uri.fromParts("tel", call.number, null).toString()) }
             .apply { call.person?.photo?.let { photo(context, it) }?.let { setIcon(IconCompat.createWithBitmap(it)) } }
             .build()
         val open = PendingIntent.getActivity(
@@ -76,6 +79,7 @@ object CallNotifications {
         val builder = NotificationCompat.Builder(context, CH_ONGOING)
             .setSmallIcon(R.drawable.ghanti_notification)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .addPerson(person)
             .setOngoing(true)
             .setContentIntent(open)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)

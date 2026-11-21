@@ -11,7 +11,10 @@ class GhantiInCallService : InCallService() {
     private var proximity: PowerManager.WakeLock? = null
 
     private val callback = object : Call.Callback() {
-        override fun onStateChanged(call: Call, state: Int) = changed()
+        override fun onStateChanged(call: Call, state: Int) {
+            if (state != Call.STATE_RINGING) RingThrough.stop(this@GhantiInCallService, call)
+            changed()
+        }
         override fun onDetailsChanged(call: Call, details: Call.Details) = changed()
         override fun onConferenceableCallsChanged(call: Call, conferenceableCalls: MutableList<Call>) = changed()
         override fun onParentChanged(call: Call, parent: Call?) = changed()
@@ -22,10 +25,13 @@ class GhantiInCallService : InCallService() {
     override fun onCreate() {
         super.onCreate()
         Calls.service = this
+        Recorder.listen(this)
     }
 
     override fun onDestroy() {
         Calls.service = null
+        Recorder.stop(this)
+        Recorder.unlisten(this)
         releaseProximity()
         super.onDestroy()
     }
@@ -33,19 +39,28 @@ class GhantiInCallService : InCallService() {
     override fun onCallAdded(call: Call) {
         call.registerCallback(callback)
         Calls.track(this, call)
-        changed()
-        // an incoming call shows through its notification: full screen when locked, a banner when not
+        // before this call's own notification goes up: posting it records the caller, which would make
+        // Do Not Disturb count this very call as a repeat
         @Suppress("DEPRECATION")
-        if (call.state != Call.STATE_RINGING) {
+        val ringingThrough = call.state == Call.STATE_RINGING && RingThrough.start(this, call)
+        changed()
+        // an incoming call shows through its notification: full screen when locked, a banner when not;
+        // one ringing through Do Not Disturb opens the screen itself, as Do Not Disturb hides its notification
+        @Suppress("DEPRECATION")
+        if (call.state != Call.STATE_RINGING || ringingThrough) {
             startActivity(Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 
     override fun onCallRemoved(call: Call) {
+        RingThrough.stop(this, call)
         call.unregisterCallback(callback)
         Calls.untrack(call)
         changed()
+        if (Calls.calls.value.isEmpty()) Recorder.stop(this)
     }
+
+    override fun onSilenceRinger() = RingThrough.stop(this)
 
     override fun onCallAudioStateChanged(audioState: CallAudioState?) {
         Calls.setAudio(audioState)
