@@ -63,6 +63,10 @@ class SetupActivity : Activity() {
         steps.addView(button("Open Play Protect") {
             runCatching { startActivity(Intent("com.google.android.gms.settings.VERIFY_APPS_SETTINGS")) }
         })
+        steps.addView(text("The guide, new versions and the source are on GitHub.", 14f, top = 24))
+        steps.addView(button("Open on GitHub") {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO))) }
+        })
     }
 
     private fun step(title: String, done: Boolean, action: String, onClick: () -> Unit) {
@@ -99,4 +103,8 @@ class SetupActivity : Activity() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    private companion object {
+        const val REPO = "https://github.com/jaswantk917/tring-recorder"
+    }
 }
