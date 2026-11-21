@@ -7,6 +7,11 @@ import android.telecom.TelecomManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import io.github.jaswantk917.ghanti.incall.Recorder
+import androidx.compose.material.icons.rounded.FiberManualRecord
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -119,6 +124,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.RoundedPolygon
 import io.github.jaswantk917.ghanti.GhantiApp
 import io.github.jaswantk917.ghanti.data.MemoList
 import io.github.jaswantk917.ghanti.incall.CallUi
@@ -274,16 +280,28 @@ fun InCallScreen(
                 Secondary(call, tones)
             }
             Spacer(Modifier.height(14.dp))
-            Hints(
-                call, ended,
-                label = memo?.label?.takeIf { stranger },
-                before = before?.takeIf { stranger },
-                canConfirm = stranger && call.phase != Phase.Ringing,
-                onConfirm = ::confirm,
-                onPick = { onNoting(true) },
-            )
-            AnimatedVisibility(canNote, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                NoteEntry(memo?.note.orEmpty(), onClick = { haptics.play(Haptic.Tap); onNoting(true) }, modifier = Modifier.padding(top = 14.dp))
+            // who it was and the note share a line: both are what you'd jot down about the call
+            val hinted = call.phase == Phase.Ringing || call.outcome?.guess != null || (stranger && (memo?.label != null || before != null))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (hinted) {
+                    Box(Modifier.weight(1f, fill = false)) {
+                        Hints(
+                            call, ended,
+                            label = memo?.label?.takeIf { stranger },
+                            before = before?.takeIf { stranger },
+                            canConfirm = stranger && call.phase != Phase.Ringing,
+                            onConfirm = ::confirm,
+                            onPick = { onNoting(true) },
+                        )
+                    }
+                }
+                AnimatedVisibility(canNote, enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
+                    NoteEntry(memo?.note.orEmpty(), short = hinted, onClick = { haptics.play(Haptic.Tap); onNoting(true) })
+                }
             }
             Spacer(Modifier.weight(1f))
             // the weight above is zero once a guess and a note both show, so keep the controls off the note
@@ -491,7 +509,7 @@ private fun Pill(icon: ImageVector, text: String, strong: Boolean, action: Strin
 
 /** the note for this call: a quiet button until there's something, then the words themselves */
 @Composable
-private fun NoteEntry(note: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun NoteEntry(note: String, short: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
     Row(
@@ -500,17 +518,18 @@ private fun NoteEntry(note: String, onClick: () -> Unit, modifier: Modifier = Mo
             .clip(RoundedCornerShape(20.dp))
             .background(scheme.surfaceContainerHigh)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = if (short) 12.dp else 16.dp, vertical = if (short) 8.dp else 10.dp)
+            .then(if (short) Modifier.widthIn(max = 150.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.EditNote, null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(if (short) 6.dp else 10.dp))
         AnimatedContent(note.isBlank(), label = "note") { empty ->
             Text(
-                if (empty) "Add a note" else note,
+                if (empty) (if (short) "Note" else "Add a note") else note,
                 style = if (empty) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
                 color = if (empty) scheme.onSurfaceVariant else scheme.onSurface,
-                maxLines = 2,
+                maxLines = if (short) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -753,9 +772,12 @@ private fun Controls(
     val route = audio?.route ?: CallAudioState.ROUTE_EARPIECE
     val hasBluetooth = audio != null && audio.supportedRouteMask and CallAudioState.ROUTE_BLUETOOTH != 0
     val held = call.phase == Phase.Holding
+    val context = LocalContext.current
+    val hasRecorder = remember { Recorder.installed(context) }
+    val recording by Recorder.state.collectAsState()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Control(if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (muted) "Muted" else "Mute", muted) {
+            Control(if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (muted) "Muted" else "Mute", muted, MaterialShapes.Cookie6Sided) {
                 haptics.play(if (muted) Haptic.ToggleOff else Haptic.ToggleOn); Calls.mute(!muted)
             }
             Control(Icons.Rounded.Dialpad, "Keypad", false) { haptics.play(Haptic.Tap); onKeypad() }
@@ -770,6 +792,8 @@ private fun Controls(
                 },
                 label = if (elsewhere) routeName(audio) else "Speaker",
                 checked = speaker || elsewhere,
+                // the speaker opens into the same sunburst as the face behind the photo
+                on = if (elsewhere) MaterialShapes.Clover4Leaf else MaterialShapes.Sunny,
                 onLongClick = if (hasBluetooth || audio?.supportedRouteMask?.and(CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
                     { haptics.play(Haptic.Hold); onRoutes() }
                 } else null,
@@ -780,12 +804,31 @@ private fun Controls(
         }
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Control(Icons.Rounded.Pause, if (held) "On hold" else "Hold", held, enabled = call.canHold && others.none { it.phase == Phase.Holding }) {
+            Control(Icons.Rounded.Pause, if (held) "On hold" else "Hold", held, MaterialShapes.Puffy, enabled = call.canHold && others.none { it.phase == Phase.Holding }) {
                 haptics.play(if (held) Haptic.ToggleOff else Haptic.ToggleOn); Calls.hold(call.call, !held)
             }
             Control(Icons.Rounded.PersonAdd, "Add call", false, enabled = others.isEmpty()) { haptics.play(Haptic.Tap); onAddCall() }
             when {
                 call.canMerge && others.isNotEmpty() -> Control(Icons.Rounded.CallMerge, "Merge", false) { haptics.play(Haptic.Success); Calls.merge(call.call) }
+                // with one call there's nothing to swap, so the slot records instead when Tring Recorder is installed
+                others.isEmpty() && hasRecorder -> Control(
+                    icon = Icons.Rounded.FiberManualRecord,
+                    label = when (recording) {
+                        Recorder.State.Recording -> "Recording"
+                        Recorder.State.Starting -> "Starting"
+                        Recorder.State.NeedsSetup -> "Set up"
+                        Recorder.State.Off -> "Record"
+                    },
+                    checked = recording == Recorder.State.Recording,
+                    on = MaterialShapes.SoftBurst,
+                    pulse = recording == Recorder.State.Recording,
+                ) {
+                    when (recording) {
+                        Recorder.State.NeedsSetup -> { haptics.play(Haptic.Tap); Recorder.openSetup(context) }
+                        Recorder.State.Off -> { haptics.play(Haptic.ToggleOn); Recorder.record(context, call.title) }
+                        else -> { haptics.play(Haptic.ToggleOff); Recorder.stop(context) }
+                    }
+                }
                 else -> Control(Icons.Rounded.SwapCalls, "Swap", false, enabled = others.any { it.phase == Phase.Holding }) {
                     haptics.play(Haptic.Segment); Calls.swap()
                 }
@@ -801,12 +844,15 @@ private fun routeName(audio: CallAudioState?): String = when (audio?.route) {
     else -> audio?.activeBluetoothDevice?.let { runCatching { it.name }.getOrNull() } ?: "Bluetooth"
 }
 
-/** a round toggle that melts into a cookie when it's on */
+/** a round toggle that melts into its own shape when it's on, so two on at once don't look alike */
 @Composable
 private fun Control(
     icon: ImageVector,
     label: String,
     checked: Boolean,
+    on: RoundedPolygon = MaterialShapes.Cookie4Sided,
+    /** a slow heartbeat on the icon while it's doing something, like recording */
+    pulse: Boolean = false,
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
@@ -819,11 +865,17 @@ private fun Control(
             Modifier
                 .size(72.dp)
                 .pressScale(interaction, 0.9f)
-                .clip(stateMorph(MaterialShapes.Circle, MaterialShapes.Cookie4Sided, checked))
+                .clip(stateMorph(MaterialShapes.Circle, on, checked))
                 .background(if (checked) scheme.primary else scheme.surfaceContainerHigh)
                 .combinedClickable(interactionSource = interaction, indication = null, enabled = enabled, onLongClick = onLongClick, onClick = onClick),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, label, tint = if (checked) scheme.onPrimary else scheme.onSurface, modifier = Modifier.size(28.dp)) }
+        ) {
+            // only the pulsing one runs a clock, so six idle buttons don't redraw every frame
+            val beat = if (pulse) {
+                rememberInfiniteTransition(label = "pulse").animateFloat(1f, 0.72f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse").value
+            } else 1f
+            Icon(icon, label, tint = if (checked) scheme.onPrimary else scheme.onSurface, modifier = Modifier.size(28.dp).graphicsLayer { scaleX = beat; scaleY = beat })
+        }
         Spacer(Modifier.height(8.dp))
         Text(label, style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

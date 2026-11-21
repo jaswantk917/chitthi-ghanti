@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tring Recorder</string>
+    <string name="service_description">Records a call when you tap Record in Tring. It only uses the microphone, never reads your screen, and keeps recordings on this phone.</string>
+</resources>

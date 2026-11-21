@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- to tell Tring (or its debug build) whether a recording started -->
+    <queries>
+        <package android:name="io.github.jaswantk917.chitthighanti" />
+        <package android:name="io.github.jaswantk917.chitthighanti.debug" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/recorder_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- an Accessibility service is the only kind of app Android lets use the microphone during a call -->
+        <service
+            android:name=".CallRecorder"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/call_recorder" />
+        </service>
+    </application>
+</manifest>

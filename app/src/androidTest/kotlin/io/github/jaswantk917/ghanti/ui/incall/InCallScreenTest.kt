@@ -138,4 +138,18 @@ class InCallScreenTest {
         val dir = File(rule.activity.getExternalFilesDir(null), "screens").apply { mkdirs() }
         File(dir, "tones.png").outputStream().use { rule.onNode(isDialog()).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+    @Test
+    fun mutedOnSpeakerTakeDifferentShapes() {
+        show(bistro, emptyList(), audio = CallAudioState(true, CallAudioState.ROUTE_SPEAKER, CallAudioState.ROUTE_EARPIECE or CallAudioState.ROUTE_SPEAKER))
+        snap("muted-speaker")
+    }
+
+    @Test
+    fun aGuessAndANoteShareALineAtLargeText() {
+        show(bistro, emptyList(), fontScale = 1.3f, audio = earpiece)
+        snap("guess-note-text-1.3")
+        rule.onNodeWithText("Note").assertIsDisplayed()
+        rule.onNodeWithContentDescription("End call").assertHeightIsAtLeast(72.dp)
+    }
 }

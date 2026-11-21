@@ -39,6 +39,8 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Tring Recorder, installed from a file: the Record button shows only when it's there -->
+        <package android:name="io.github.jaswantk917.tring.recorder" />
     </queries>
 
     <application

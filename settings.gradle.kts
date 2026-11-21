@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "ChitthiGhanti"
-include(":app")
+include(":app", ":recorder")
