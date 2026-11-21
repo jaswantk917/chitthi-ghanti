@@ -71,7 +71,9 @@ abstract class RecorderFunctions : AppFunctionService() {
     @AppFunctionDeclaration(isDescribedByKDoc = true)
     suspend fun getRecentTalk(): RecentTalk = withContext(Dispatchers.IO) {
         val notes = Notes(this@RecorderFunctions)
-        val calls = Recordings.list(this@RecorderFunctions).filter { notes.summary(it.id) != null }.take(Processor.LATELY_CALLS)
+        val recordings = Recordings.list(this@RecorderFunctions)
+        Processor.get(this@RecorderFunctions).freshen(recordings)
+        val calls = recordings.filter { !notes.summary(it.id).isNullOrEmpty() }.take(Processor.LATELY_CALLS)
         RecentTalk(notes.lately()?.first, calls.map { it.described(notes) })
     }
 
@@ -79,6 +81,6 @@ abstract class RecorderFunctions : AppFunctionService() {
         with = who,
         startedAt = Processor.heading(at),
         durationSeconds = (durationMs / 1_000).toInt(),
-        summary = notes.summary(id),
+        summary = notes.summary(id)?.ifEmpty { "Too short to tell what it was about." },
     )
 }

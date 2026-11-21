@@ -17,7 +17,13 @@ object Recordings {
 
     private val collection get() = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
-    fun list(context: Context): List<Recording> {
+    fun get(context: Context, id: Long): Recording? = query(context, "${MediaStore.Audio.Media._ID} = ?", arrayOf(id.toString())).firstOrNull()
+
+    fun list(context: Context): List<Recording> = query(
+        context, "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Audio.Media.IS_PENDING} = 0", arrayOf(folder() + "%"),
+    )
+
+    private fun query(context: Context, selection: String, args: Array<String>): List<Recording> {
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.DISPLAY_NAME,
@@ -25,12 +31,7 @@ object Recordings {
             MediaStore.Audio.Media.DURATION,
         )
         val found = ArrayList<Recording>()
-        context.contentResolver.query(
-            collection, projection,
-            "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Audio.Media.IS_PENDING} = 0",
-            arrayOf(folder() + "%"),
-            "${MediaStore.Audio.Media.DATE_ADDED} DESC",
-        )?.use { cursor ->
+        context.contentResolver.query(collection, projection, selection, args, "${MediaStore.Audio.Media.DATE_ADDED} DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(0)
                 found += Recording(

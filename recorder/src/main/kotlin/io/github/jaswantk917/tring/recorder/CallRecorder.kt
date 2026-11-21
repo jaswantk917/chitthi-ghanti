@@ -121,6 +121,9 @@ class CallRecorder : AccessibilityService() {
         if (keep) {
             contentResolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
             notifySaved(uri)
+            // the processor's queue lives on the main thread; this runs on the mixdown thread
+            Recordings.get(this, ContentUris.parseId(uri))?.let { recording -> mainExecutor.execute { afterCall(uri, recording) } }
+
         } else {
             runCatching { contentResolver.delete(uri, null, null) }
         }
@@ -130,23 +133,54 @@ class CallRecorder : AccessibilityService() {
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Saved recordings", NotificationManager.IMPORTANCE_LOW))
-        val play = PendingIntent.getActivity(
-            this, uri.hashCode(),
-            Intent(this, RecordingsActivity::class.java).putExtra(RecordingsActivity.EXTRA_OPEN, ContentUris.parseId(uri))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
         manager.notify(
             uri.hashCode(),
             Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Call recorded")
                 .setContentText("Tap to play it and read what was said")
-                .setContentIntent(play)
+                .setContentIntent(openCall(uri))
                 .setAutoCancel(true)
                 .build(),
         )
     }
+
+    private fun afterCall(uri: Uri, recording: Recording) {
+        val processor = Processor.get(this)
+        processor.afterCall(recording) { summary ->
+            if (!summary.isNullOrEmpty()) {
+                notifySummary(uri, recording, summary)
+                processor.lately(Recordings.list(this))
+            }
+        }
+    }
+
+    /** the "Call recorded" note becomes what the call was about, in its own channel so these can be turned down on their own */
+    private fun notifySummary(uri: Uri, recording: Recording, summary: String) {
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(SUMMARIES, "Call summaries", NotificationManager.IMPORTANCE_LOW))
+        // switched off: the plain "Call recorded" note stays
+        if (manager.getNotificationChannel(SUMMARIES)?.importance == NotificationManager.IMPORTANCE_NONE) return
+        manager.notify(
+            uri.hashCode(),
+            Notification.Builder(this, SUMMARIES)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle(recording.who)
+                .setContentText(summary.lineSequence().first().removePrefix("• "))
+                .setStyle(Notification.BigTextStyle().bigText(summary))
+                .setContentIntent(openCall(uri))
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
+    private fun openCall(uri: Uri) = PendingIntent.getActivity(
+        this, uri.hashCode(),
+        Intent(this, RecordingsActivity::class.java).putExtra(RecordingsActivity.EXTRA_OPEN, ContentUris.parseId(uri))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun report(state: String) {
         TRING.forEach { sendBroadcast(Intent(ACTION_STATE).setPackage(it).putExtra(EXTRA_STATE, state)) }
@@ -157,6 +191,7 @@ class CallRecorder : AccessibilityService() {
     companion object {
         private const val TAG = "CallRecorder"
         private const val CHANNEL = "saved"
+        private const val SUMMARIES = "summaries"
         // the contract with Tring's Ghanti; Recorder.kt there holds the same strings
         const val ACTION_RECORD = "io.github.jaswantk917.tring.recorder.RECORD"
         const val ACTION_STATE = "io.github.jaswantk917.tring.RECORDING"

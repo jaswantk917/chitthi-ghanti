@@ -9,7 +9,8 @@
 
 namespace {
 
-constexpr int OUT_CAPACITY = 64 * 1024;
+// room for a long turn with every word's times and probability
+constexpr int OUT_CAPACITY = 512 * 1024;
 
 std::string text(JNIEnv* env, jstring value) {
     if (value == nullptr) return {};
@@ -60,7 +61,7 @@ Java_io_github_jaswantk917_tring_recorder_Needle_transcribe(
     jfloat* audio = env->GetFloatArrayElements(pcm, nullptr);
     const int result = needle_transcribe(
         audio, samples, spoken.empty() ? nullptr : spoken.c_str(), words.empty() ? nullptr : words.c_str(),
-        0, out.data(), OUT_CAPACITY);
+        1, out.data(), OUT_CAPACITY);
     env->ReleaseFloatArrayElements(pcm, audio, JNI_ABORT);
     return result < 0 ? nullptr : json(env, out);
 }

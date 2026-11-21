@@ -1,8 +1,11 @@
 package io.github.jaswantk917.tring.recorder
 
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -15,8 +18,9 @@ import java.util.Locale
 
 /**
  * Turns recordings into transcripts and summaries, one at a time (Shruti and Nano each take one
- * job at once). While the app is open it catches up on recent calls by itself, because
- * AICore only answers the app in front; a call opened on screen goes before the catch-up.
+ * job at once). Each call is transcribed as soon as it ends and its summary tried then too; what
+ * that misses is caught up on while the app is open, since AICore usually only answers the app in
+ * front. One per process ([get]), so the screens and the recorder service share the queue.
  */
 class Processor(
     private val notes: Notes,
@@ -50,6 +54,16 @@ class Processor(
     private val _canSummarize = MutableStateFlow<Boolean?>(null)
     val canSummarize: StateFlow<Boolean?> = _canSummarize
 
+    /** right after a call is saved: its transcript, then a try at its summary; [done] gets the summary, null when there is none yet */
+    fun afterCall(recording: Recording, done: (String?) -> Unit) {
+        jobs[recording.id] = scope.launch {
+            lock.withLock {
+                if (listen(recording)) summarize(recording.id, recording.who)
+            }
+            done(notes.summary(recording.id))
+        }
+    }
+
     fun transcribe(recording: Recording) {
         jobs[recording.id]?.cancel()
         jobs[recording.id] = scope.launch {
@@ -68,44 +82,59 @@ class Processor(
     fun catchUp(recordings: List<Recording>) {
         if (catching?.isActive == true || !transcriber.supported) return
         catching = scope.launch {
+            // once Nano says no, the rest still get transcripts (a phone without Nano used to stop after one)
+            var summarizing = true
             for (recording in recordings.take(CATCH_UP)) {
                 val stop = lock.withLock {
-                    when {
-                        _work.value[recording.id] != null -> false
-                        notes.transcript(recording.id) == null -> !listen(recording) || !summarize(recording.id, recording.who)
-                        notes.summary(recording.id) == null && notes.transcript(recording.id)?.isNotEmpty() == true -> !summarize(recording.id, recording.who)
-                        else -> false
-                    }
+                    if (_work.value[recording.id] != null) return@withLock false
+                    // Shruti is missing or failing: the next call would fail the same way
+                    if (notes.transcript(recording.id) == null && !listen(recording)) return@withLock true
+                    if (summarizing && notes.summary(recording.id) == null) summarizing = summarize(recording.id, recording.who)
+                    false
                 }
-                // the model is missing or failing: trying the next call would only fail the same way
                 if (stop) break
             }
-            if (latelyBehind(recordings)) lately(recordings)
+            if (latelyBehind(recordings)) updateLately(recordings)
         }
     }
 
     fun lately(recordings: List<Recording>) {
-        if (_latelyBusy.value) return
-        scope.launch {
-            _latelyBusy.value = true
-            try {
-                val calls = summarised(recordings)
-                if (calls.isNotEmpty() && nanoReady()) {
-                    val text = lock.withLock {
-                        summarizer.lately(calls.map { "With ${it.who}, ${heading(it.at)}" to notes.summary(it.id).orEmpty() })
-                    }
-                    if (text != null) {
-                        notes.saveLately(text, calls.first().at)
-                        _saved.update { it + 1 }
-                    }
-                }
-            } finally {
-                _latelyBusy.value = false
+        scope.launch { updateLately(recordings) }
+    }
+
+    /** for an assistant asking: summaries for the newest calls already transcribed, then "Lately" when it is behind */
+    suspend fun freshen(recordings: List<Recording>) {
+        for (recording in recordings.take(LATELY_CALLS)) {
+            val stop = lock.withLock {
+                _work.value[recording.id] == null && notes.transcript(recording.id) != null && notes.summary(recording.id) == null &&
+                    !summarize(recording.id, recording.who)
             }
+            if (stop) return
+        }
+        if (latelyBehind(recordings)) updateLately(recordings)
+    }
+
+    private suspend fun updateLately(recordings: List<Recording>) {
+        if (_latelyBusy.value) return
+        _latelyBusy.value = true
+        try {
+            val calls = summarised(recordings)
+            if (calls.isNotEmpty() && nanoReady()) {
+                val text = lock.withLock {
+                    summarizer.lately(calls.map { "With ${it.who}, ${heading(it.at)}" to notes.summary(it.id).orEmpty() })
+                }
+                if (text != null) {
+                    notes.saveLately(text, calls.first().at)
+                    _saved.update { it + 1 }
+                }
+            }
+        } finally {
+            _latelyBusy.value = false
         }
     }
 
-    fun summarised(recordings: List<Recording>) = recordings.filter { notes.summary(it.id) != null }.take(LATELY_CALLS)
+    /** the newest calls that have something to say, for "Lately" */
+    fun summarised(recordings: List<Recording>) = recordings.filter { !notes.summary(it.id).isNullOrEmpty() }.take(LATELY_CALLS)
 
     private fun latelyBehind(recordings: List<Recording>): Boolean {
         val newest = summarised(recordings).firstOrNull() ?: return false
@@ -139,7 +168,12 @@ class Processor(
 
     /** true when there is a summary afterwards, or nothing to summarise */
     private suspend fun summarize(id: Long, who: String): Boolean {
-        val lines = notes.transcript(id)?.takeIf { it.isNotEmpty() } ?: return true
+        val lines = notes.transcript(id) ?: return true
+        if (!Summarizer.worthSummarising(lines)) {
+            notes.saveSummary(id, "")
+            _saved.update { it + 1 }
+            return true
+        }
         if (!nanoReady()) return false
         set(id, Work.Summarizing)
         val text = summarizer.call(who, lines)
@@ -151,7 +185,8 @@ class Processor(
         return text != null
     }
 
-    private suspend fun nanoReady(): Boolean = nano ?: summarizer.ready().also { nano = it; _canSummarize.value = it }
+    // only a yes is kept: a no can be AICore turning down an app in the background, which the app on screen gets past
+    private suspend fun nanoReady(): Boolean = nano ?: summarizer.ready().also { if (it) nano = true; _canSummarize.value = it }
 
     private fun set(id: Long, work: Work?) = _work.update { if (work == null) it - id else it + (id to work) }
 
@@ -161,6 +196,15 @@ class Processor(
     }
 
     companion object {
+        @Volatile
+        private var shared: Processor? = null
+
+        fun get(context: Context): Processor = shared ?: synchronized(this) {
+            shared ?: context.applicationContext.let { app ->
+                Processor(Notes(app), Transcriber(app), Summarizer(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+            }.also { shared = it }
+        }
+
         /** how many of the newest calls are caught up on by themselves */
         const val CATCH_UP = 10
         const val LATELY_CALLS = 10

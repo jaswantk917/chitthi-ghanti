@@ -27,7 +27,7 @@ internal object Needle {
 
     external fun lastError(): String
 
-    /** JSON {"text": ..., "language": ...} for the whole clip, or null on failure. */
+    /** JSON {"text": ..., "language": ..., "words": [{"word", "start", "end", "probability"}]} for the whole clip, or null on failure. */
     external fun transcribe(pcm: FloatArray, samples: Int, language: String?, keywords: String?): String?
 }
 
@@ -50,14 +50,25 @@ object Shruti {
 
     val available get() = Needle.isAvailable
 
+    /** what was heard, and how sure Shruti is of it: the mean of its words' probabilities, 1 when it gave none */
+    data class Heard(val text: String, val confidence: Float)
+
     /** the words in 16 kHz mono [pcm] in [-1, 1]; [names] are spelt as given when heard */
-    suspend fun transcribe(context: Context, pcm: FloatArray, names: List<String> = emptyList()): String = withContext(engine) {
+    suspend fun transcribe(context: Context, pcm: FloatArray, names: List<String> = emptyList()): Heard = withContext(engine) {
         load(context)
         val started = System.currentTimeMillis()
         val json = Needle.transcribe(pcm, pcm.size, LANGUAGE, names.joinToString("\n").ifEmpty { null })
             ?: error(Needle.lastError())
-        Log.i(TAG, "${pcm.size / 16} ms of audio in ${System.currentTimeMillis() - started} ms")
-        JSONObject(json).optString("text").trim()
+        val heard = parse(json)
+        Log.i(TAG, "${pcm.size / 16} ms of audio in ${System.currentTimeMillis() - started} ms, confidence ${"%.2f".format(heard.confidence)}")
+        heard
+    }
+
+    fun parse(json: String): Heard {
+        val result = JSONObject(json)
+        val words = result.optJSONArray("words")
+        val probabilities = (0 until (words?.length() ?: 0)).mapNotNull { words!!.optJSONObject(it)?.optDouble("probability")?.takeIf { p -> !p.isNaN() } }
+        return Heard(result.optString("text").trim(), if (probabilities.isEmpty()) 1f else probabilities.average().toFloat())
     }
 
     private fun load(context: Context) {

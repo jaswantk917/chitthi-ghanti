@@ -45,8 +45,8 @@ class Transcriber(private val context: Context) {
             pieces.forEachIndexed { i, piece ->
                 ensureActive()
                 onProgress(Progress(i, pieces.size))
-                val text = Shruti.transcribe(context, read(pcm, piece), names)
-                if (text.isNotEmpty()) lines += Line(if (named) piece.them else null, piece.startMs, text).also(onLine)
+                val heard = Shruti.transcribe(context, read(pcm, piece), names)
+                if (heard.text.isNotEmpty()) lines += Line(if (named) piece.them else null, piece.startMs, heard.text, heard.confidence).also(onLine)
             }
             onProgress(Progress(pieces.size, pieces.size))
             lines

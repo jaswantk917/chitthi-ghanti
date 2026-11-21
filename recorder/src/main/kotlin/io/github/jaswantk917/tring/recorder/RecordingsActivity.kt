@@ -118,7 +118,7 @@ import java.util.Locale
 /** The recorder's home: your recorded calls, each with its transcript and a summary, made on the phone. */
 class RecordingsActivity : ComponentActivity() {
     private val notes by lazy { Notes(this) }
-    private val processor by lazy { Processor(notes, Transcriber(this), Summarizer(), lifecycleScope) }
+    private val processor by lazy { Processor.get(this) }
     private var recordings by mutableStateOf<List<Recording>?>(null)
     private var setupDone by mutableStateOf(true)
     private var update by mutableStateOf<Release?>(null)
@@ -310,7 +310,7 @@ private fun RecordingList(
                     item(key = recording.id) {
                         RecordingRow(
                             recording,
-                            summarised = remember(recording.id, tick) { notes.summary(recording.id) != null },
+                            summarised = remember(recording.id, tick) { !notes.summary(recording.id).isNullOrEmpty() },
                             working = work[recording.id].let { it != null && it !is Processor.Work.Failed },
                             onClick = { onOpen(recording) },
                             modifier = Modifier.animateItem(),
@@ -609,6 +609,7 @@ private fun SummaryCard(summary: String?, working: Boolean, waiting: Boolean, ca
             Crossfade(Triple(working, summary, waiting), label = "summary") { (busy, text, early) ->
                 when {
                     busy -> Thinking("Summarising on this phone…", color)
+                    text == "" -> Text("Too short to tell what it was about.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
                     text != null -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 8.dp, end = 12.dp))
                     early -> Text("Comes once the transcript is ready.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
                     else -> Text("Tap ↻ to summarise.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
