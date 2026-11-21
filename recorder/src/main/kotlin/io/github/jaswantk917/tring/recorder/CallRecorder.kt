@@ -130,6 +130,7 @@ class CallRecorder : AccessibilityService() {
         val uri = call.uri
         if (keep) {
             contentResolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
+            RecordingsProvider.changed(this)
             notifySaved(uri)
             // the processor's queue lives on the main thread; this runs on the mixdown thread
             Recordings.get(this, ContentUris.parseId(uri))?.let { recording -> mainExecutor.execute { afterCall(uri, recording) } }

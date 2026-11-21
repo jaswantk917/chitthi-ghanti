@@ -14,7 +14,7 @@ data class Line(val them: Boolean?, val atMs: Int, val text: String, val confide
  * end of the call), the transcript, and the summary. In the app's private files, keyed by the
  * recording's MediaStore id, so they go when the app does.
  */
-class Notes(context: Context) {
+class Notes(private val context: Context) {
     private val dir = File(context.filesDir, "notes").apply { mkdirs() }
 
     fun turnsFile(id: Long) = File(dir, "$id.turns")
@@ -45,7 +45,10 @@ class Notes(context: Context) {
     fun summary(id: Long): String? = File(dir, "$id.summary").takeIf { it.exists() }?.readText()
         ?.takeIf { it.startsWith(VERSION) }?.removePrefix(VERSION)
 
-    fun saveSummary(id: Long, text: String) = File(dir, "$id.summary").writeText(VERSION + text)
+    fun saveSummary(id: Long, text: String) {
+        File(dir, "$id.summary").writeText(VERSION + text)
+        RecordingsProvider.changed(context)
+    }
 
     /** what you've been talking about lately, and the newest call it took in */
     fun lately(): Pair<String, Long>? {
