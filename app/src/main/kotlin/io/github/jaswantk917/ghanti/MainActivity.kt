@@ -1,5 +1,6 @@
 package io.github.jaswantk917.ghanti
 
+import io.github.jaswantk917.ghanti.incall.MissedCallReminder
 import io.github.jaswantk917.ghanti.data.AutoRecord
 import io.github.jaswantk917.ghanti.incall.Recorder
 import android.Manifest
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        MissedCallReminder.seen(this)
         refreshSetup()
         // Play: the call log is read only while this is the phone app
         if (setup.isPhoneApp) home.start()

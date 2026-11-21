@@ -45,7 +45,8 @@ class MissedCallReceiver : BroadcastReceiver() {
             .setContentTitle(if (count > 1) "$count missed calls" else if (silenced) "Silenced call" else "Missed call")
             .setContentText(if (silenced) "$who rang quietly" else who)
             .setContentIntent(open)
-            .setDeleteIntent(clear)
+            // swiped away unseen: a real miss comes back once in an hour; a silenced stranger doesn't
+            .setDeleteIntent(if (silenced) clear else MissedCallReminder.onDismiss(context, number, who, count, clear))
             .setAutoCancel(true)
             .apply { person?.photo?.let { CallNotifications.photo(context, it) }?.let(::setLargeIcon) }
         if (callBack != null) builder.addAction(0, "Call back", callBack)

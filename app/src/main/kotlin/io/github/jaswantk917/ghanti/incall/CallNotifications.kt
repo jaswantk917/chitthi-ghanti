@@ -26,6 +26,12 @@ object CallNotifications {
     const val CH_MISSED = "missed"
     const val CH_SILENCED = "silenced"
     private const val ID_CALL = 1
+    // Ringing has its own id: on answer it's cancelled along with its pop-up, and the call posts
+    // fresh at Default importance. Sharing one id, the ringing pop-up stayed pinned for the whole
+    // call (Pixel, Android 17, 2026-11-21).
+    private const val ID_RINGING = 4
+
+    internal fun idFor(phase: Phase) = if (phase == Phase.Ringing) ID_RINGING else ID_CALL
 
     fun createChannels(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannels(
@@ -44,23 +50,30 @@ object CallNotifications {
                 NotificationChannel(CH_SILENCED, "Silenced calls", NotificationManager.IMPORTANCE_LOW).apply {
                     description = "Strangers who called while silenced"
                 },
+                NotificationChannel(MissedCallReminder.CHANNEL, "Missed-call reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "A missed call you swiped away, an hour later, unless you called back or opened Ghanti"
+                },
             )
         )
     }
 
     fun update(service: InCallService) {
         val call = Calls.primary
+        val manager = NotificationManagerCompat.from(service)
         if (call == null) {
             ServiceCompat.stopForeground(service, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            manager.cancel(ID_RINGING)
             return
         }
+        val id = idFor(call.phase)
         val notification = build(service, call)
         try {
-            ServiceCompat.startForeground(service, ID_CALL, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            ServiceCompat.startForeground(service, id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
         } catch (e: Exception) {
             Log.w(TAG, "no foreground for the call", e)
-            NotificationManagerCompat.from(service).notify(ID_CALL, notification)
+            manager.notify(id, notification)
         }
+        manager.cancel(if (id == ID_RINGING) ID_CALL else ID_RINGING)
     }
 
     internal fun build(context: Context, call: CallUi): android.app.Notification {
@@ -81,6 +94,8 @@ object CallNotifications {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .addPerson(person)
             .setOngoing(true)
+            // the call is posted again on every change (audio route, hold, a second call); it alerts once
+            .setOnlyAlertOnce(true)
             .setContentIntent(open)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
         if (call.phase == Phase.Ringing) {
