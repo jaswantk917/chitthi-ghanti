@@ -1,5 +1,7 @@
 package io.github.jaswantk917.ghanti
 
+import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.incall.Recorder
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationManager
@@ -197,6 +199,7 @@ class MainActivity : ComponentActivity() {
                     startActivity(Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, id)))
                 }
                 override fun setUsual(contactId: Long, number: String?) = app.prefs.setUsual(contactId, number)
+                override fun setRecord(numbers: List<String>, on: Boolean) = app.prefs.setRecord(numbers, on)
                 override fun saveMemo(number: String, at: Long, label: String?, note: String) = app.memos.save(number, at, label, note)
                 override fun delete(row: RecentRow) {
                     lifecycleScope.launch(Dispatchers.IO) { runCatching { Recents.delete(this@MainActivity, row.group.entries.map { it.id }) } }
@@ -224,11 +227,13 @@ class MainActivity : ComponentActivity() {
         }
 
         val usual by app.prefs.usual.collectAsState()
+        val recordNumbers by app.prefs.recordNumbers.collectAsState()
+        val hasRecorder = remember { Recorder.installed(this) }
         if (!setup.isPhoneApp) {
             GhantiWelcome(declined, onStart = { role.launch(getSystemService(RoleManager::class.java).createRequestRoleIntent(RoleManager.ROLE_DIALER)) })
             return
         }
-        HomeScreen(state, setup, expecting, usual, actions)
+        HomeScreen(state, setup, expecting, usual, actions, recording = recordNumbers.takeIf { hasRecorder && settings.autoRecord == AutoRecord.Chosen })
 
         keypad?.let { initial ->
             KeypadSheet(

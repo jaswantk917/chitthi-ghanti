@@ -5,15 +5,20 @@ import android.os.PowerManager
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
+import io.github.jaswantk917.ghanti.GhantiApp
+import io.github.jaswantk917.ghanti.data.AutoRecord
 
 /** Telecom's line into Ghanti: every call on the phone passes through here while Ghanti is the phone app. */
 class GhantiInCallService : InCallService() {
     private var proximity: PowerManager.WakeLock? = null
+    /** calls auto-record has already looked at: once each, so stopping it by hand sticks through a hold */
+    private val autoRecorded = HashSet<Call>()
 
     private val callback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
             if (state != Call.STATE_RINGING) RingThrough.stop(this@GhantiInCallService, call)
             changed()
+            if (state == Call.STATE_ACTIVE) autoRecord(call)
         }
         override fun onDetailsChanged(call: Call, details: Call.Details) = changed()
         override fun onConferenceableCallsChanged(call: Call, conferenceableCalls: MutableList<Call>) = changed()
@@ -55,9 +60,19 @@ class GhantiInCallService : InCallService() {
     override fun onCallRemoved(call: Call) {
         RingThrough.stop(this, call)
         call.unregisterCallback(callback)
+        autoRecorded.remove(call)
         Calls.untrack(call)
         changed()
         if (Calls.calls.value.isEmpty()) Recorder.stop(this)
+    }
+
+    private fun autoRecord(call: Call) {
+        if (call.parent != null || !autoRecorded.add(call) || Recorder.state.value != Recorder.State.Off) return
+        val prefs = GhantiApp.instance.prefs
+        val mode = prefs.settings.value.autoRecord
+        if (mode == AutoRecord.Off || !Recorder.installed(this)) return
+        val ui = Calls.calls.value.firstOrNull { it.call == call } ?: return
+        if (mode.wants(ui.number, ui.person != null, prefs.recordNumbers.value)) Recorder.record(this, ui.title)
     }
 
     override fun onSilenceRinger() = RingThrough.stop(this)

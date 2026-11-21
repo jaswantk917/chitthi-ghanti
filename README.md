@@ -36,6 +36,10 @@ Everything stays on your phone. No accounts, no ads, no tracking, no servers.
 - Notes during a call, saved as you type.
 - Everything else a phone app should do: keypad with T9, hold, merge, swap, two SIMs.
 
+## Call recording
+
+Not on Play: Play doesn't allow call recorders that work the only way an app other than the phone's own can. Install [Tring Recorder](https://github.com/jaswantk917/tring-recorder) from GitHub and Ghanti gets a Record button on the call screen, plus calls that record by themselves: every call, strangers only, or the people you pick. The setup guide is there.
+
 ## Blocking
 
 Block a number and Android stops it before any app sees it. Rules catch the rest: `140` telemarketers, promotional senders, words, patterns. Your contacts are never caught.

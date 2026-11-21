@@ -1,5 +1,11 @@
 package io.github.jaswantk917.ghanti.ui.home
 
+import androidx.compose.material.icons.rounded.FiberManualRecord
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.incall.Recorder
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -76,11 +82,12 @@ fun SettingsSheet(
     onAllowNotifications: () -> Unit,
     onOpenBlocked: () -> Unit,
     onDismiss: () -> Unit,
+    hasRecorder: Boolean = LocalContext.current.let { remember { Recorder.installed(it) } },
 ) {
     val haptics = rememberHaptics()
     fun toggle(on: Boolean) = haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        SheetColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp)) {
+        SheetColumn(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
             Spacer(Modifier.height(16.dp))
             Section(Icons.Rounded.Call, "Phone app", if (setup.isPhoneApp) "Ghanti answers your calls" else "Another app handles calls") {
@@ -115,6 +122,35 @@ fun SettingsSheet(
             }
             Section(Icons.Rounded.Vibration, "Vibrate when calls connect and end", "A firm pulse when they pick up, a soft one when they hang up or the call drops. Felt with the phone at your ear") {
                 Switch(settings.callBuzz, onCheckedChange = { on -> toggle(on); onChange { it.copy(callBuzz = on) } })
+            }
+            if (hasRecorder) {
+                Section(
+                    Icons.Rounded.FiberManualRecord, "Record calls by themselves",
+                    when (settings.autoRecord) {
+                        AutoRecord.Off -> "Tap Record during a call when you want one"
+                        AutoRecord.Chosen -> "Open someone in Contacts and switch on Record calls"
+                        AutoRecord.Strangers -> "Numbers not in your contacts record as soon as they connect"
+                        AutoRecord.Everyone -> "Every call records as soon as it connects. Tap Record to stop one"
+                    },
+                ) {}
+                FlowRow(Modifier.fillMaxWidth().padding(start = 40.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    AutoRecord.entries.forEach { mode ->
+                        ToggleButton(
+                            checked = settings.autoRecord == mode,
+                            onCheckedChange = { haptics.play(Haptic.Segment); onChange { it.copy(autoRecord = mode) } },
+                        ) {
+                            Text(
+                                when (mode) {
+                                    AutoRecord.Off -> "Off"
+                                    AutoRecord.Chosen -> "People I pick"
+                                    AutoRecord.Strangers -> "Strangers"
+                                    AutoRecord.Everyone -> "Every call"
+                                },
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
             }
             Section(Icons.Rounded.Block, "Blocked", "Numbers and rules, like every 140… telemarketer") {
                 TextButton(onClick = { haptics.play(Haptic.Tap); onOpenBlocked() }) { Text("Open") }

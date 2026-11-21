@@ -56,6 +56,7 @@ import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -79,6 +80,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
 import androidx.compose.material3.TextField
@@ -154,6 +156,8 @@ interface HomeActions {
     fun openContact(id: Long)
     /** null: ask which number again */
     fun setUsual(contactId: Long, number: String?)
+    /** auto-record this contact's calls, or stop */
+    fun setRecord(numbers: List<String>, on: Boolean)
     fun saveMemo(number: String, at: Long, label: String?, note: String)
     fun delete(row: RecentRow)
     fun keypad()
@@ -173,7 +177,8 @@ data class Setup(val isPhoneApp: Boolean, val screensCalls: Boolean, val readsNo
 private val tabs = listOf("Recents", "Contacts")
 
 @Composable
-fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: Map<Long, String>, actions: HomeActions) {
+/** [recording]: the numbers whose calls record by themselves, or null when you don't pick people */
+fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: Map<Long, String>, actions: HomeActions, recording: Set<String>? = null) {
     val pager = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
@@ -274,7 +279,7 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
                     RecentsPage(state.recents, setup, recentsList, padding, actions)
                 } else {
                     val searchDp = with(density) { searchHeight.toDp() }
-                    ContactsPage(state.contacts, query, usual, contactsList, PaddingValues(top = headerHeight + searchDp - 8.dp, bottom = navBottom + 112.dp), actions)
+                    ContactsPage(state.contacts, query, usual, contactsList, PaddingValues(top = headerHeight + searchDp - 8.dp, bottom = navBottom + 112.dp), actions, recording)
                 }
             }
             // slides in with the Contacts page and tucks under the header as you scroll down
@@ -747,6 +752,7 @@ private fun ContactsPage(
     list: androidx.compose.foundation.lazy.LazyListState,
     padding: PaddingValues,
     actions: HomeActions,
+    recording: Set<String>?,
 ) {
     val haptics = rememberHaptics()
     var open by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -798,7 +804,7 @@ private fun ContactsPage(
                     item(key = "letter-$letter-${contact.id}") { DayHeader(letter.toString()) }
                 }
                 item(key = contact.id) {
-                    ContactItem(contact, open == contact.id, onToggle = { open = if (open == contact.id) null else contact.id }, actions = actions, modifier = Modifier.animateItem())
+                    ContactItem(contact, open == contact.id, onToggle = { open = if (open == contact.id) null else contact.id }, actions = actions, recording = recording, modifier = Modifier.animateItem())
                 }
             }
         }
@@ -961,7 +967,7 @@ private fun ContactSearch(query: String, onQuery: (String) -> Unit, backdrop: Co
 private val FADE_STRIP = 12.dp
 
 @Composable
-private fun ContactItem(contact: Contact, open: Boolean, onToggle: () -> Unit, actions: HomeActions, modifier: Modifier = Modifier) {
+private fun ContactItem(contact: Contact, open: Boolean, onToggle: () -> Unit, actions: HomeActions, recording: Set<String>?, modifier: Modifier = Modifier) {
     val haptics = rememberHaptics()
     val scheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
@@ -1003,6 +1009,18 @@ private fun ContactItem(contact: Contact, open: Boolean, onToggle: () -> Unit, a
                             shape = pressMorph(MaterialShapes.Circle, MaterialShapes.Cookie6Sided, press),
                             interactionSource = press,
                         ) { Icon(Icons.Rounded.Call, "Call") }
+                    }
+                }
+                if (recording != null && contact.numbers.isNotEmpty()) {
+                    val on = contact.numbers.any { DeliveryRules.last10(it.number) in recording }
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.FiberManualRecord, null, tint = if (on) scheme.error else scheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Record calls", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        Switch(on, onCheckedChange = { next ->
+                            haptics.play(if (next) Haptic.ToggleOn else Haptic.ToggleOff)
+                            actions.setRecord(contact.numbers.map { it.number }, next)
+                        })
                     }
                 }
             }

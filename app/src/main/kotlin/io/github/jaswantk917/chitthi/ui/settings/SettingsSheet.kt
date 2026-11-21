@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,7 +74,7 @@ fun SettingsSheet(
     var confirm by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         SheetColumn(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp),
         ) {
             Text("Settings", style = MaterialTheme.typography.headlineMediumEmphasized)
             Spacer(Modifier.height(16.dp))

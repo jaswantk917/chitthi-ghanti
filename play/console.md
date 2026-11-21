@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.22:
+
+```
+With Tring Recorder installed, calls can now record by themselves: every call, strangers only, or just the people you pick.
+```
+
 1.21:
 
 ```
