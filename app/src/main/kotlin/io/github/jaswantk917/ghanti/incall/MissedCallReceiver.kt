@@ -40,7 +40,7 @@ class MissedCallReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         val builder = NotificationCompat.Builder(context, if (silenced) CallNotifications.CH_SILENCED else CallNotifications.CH_MISSED)
-            .setSmallIcon(R.drawable.ghanti_notification)
+            .setSmallIcon(R.drawable.ghanti_missed_notification)
             .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
             .setContentTitle(if (count > 1) "$count missed calls" else if (silenced) "Silenced call" else "Missed call")
             .setContentText(if (silenced) "$who rang quietly" else who)
