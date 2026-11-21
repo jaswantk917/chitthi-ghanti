@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.23:
+
+```
+Settings keep some room below their last row, clear of the navigation bar, and stretch at their edges again.
+```
+
 1.22:
 
 ```
