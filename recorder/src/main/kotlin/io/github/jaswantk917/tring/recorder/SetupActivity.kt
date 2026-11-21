@@ -39,7 +39,7 @@ class SetupActivity : Activity() {
     private fun render() {
         steps.removeAllViews()
         steps.addView(text("Tring Recorder", 30f, bold = true))
-        steps.addView(text("Tap Record during a call in Tring. Your voice is always clear; the other person is clear on speaker and faint on the earpiece, because only the phone's own app can record the line itself.", 16f, top = 12))
+        steps.addView(text("Tap Record during a call in Tring, or let Tring record calls by itself. Afterwards the other person is brought up to your loudness. On the earpiece they sound thinner, because only the phone's own app can record the line itself.", 16f, top = 12))
         val mic = granted(Manifest.permission.RECORD_AUDIO)
         step("Microphone", mic, "Allow") { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
