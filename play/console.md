@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.21:
+
+```
+Repeat callers now ring through Do Not Disturb as they should, and a delivery you're waiting for rings even at night. Missed calls have their own icon, and the call buttons each take their own shape.
+```
+
 1.20:
 
 ```
