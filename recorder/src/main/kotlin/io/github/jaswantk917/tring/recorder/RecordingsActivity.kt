@@ -1,5 +1,8 @@
 package io.github.jaswantk917.tring.recorder
 
+import androidx.compose.ui.draw.rotate
+import androidx.compose.material.icons.rounded.ExpandMore
+import android.content.Context
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -365,16 +368,34 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
     val canSummarize by processor.canSummarize.collectAsState()
     val text = remember(tick) { notes.lately()?.first }
     val summarised = remember(recordings, tick) { processor.summarised(recordings).size }
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    // folded away stays folded away, the next time the app opens too
+    val prefs = remember { context.getSharedPreferences("ui", Context.MODE_PRIVATE) }
+    var open by remember { mutableStateOf(prefs.getBoolean(LATELY_OPEN, true)) }
+    val turn by animateFloatAsState(if (open) 180f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "fold")
     if (canSummarize == false) return
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 16.dp).animateContentSize()) {
             val color = MaterialTheme.colorScheme.onPrimaryContainer
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clip(RoundedCornerShape(16.dp)).clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    open = !open
+                    prefs.edit().putBoolean(LATELY_OPEN, open).apply()
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(Icons.Rounded.AutoAwesome, null, tint = color, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Lately", style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.weight(1f))
-                RegenerateButton(enabled = !busy && summarised > 0, onClick = { processor.lately(recordings) })
+                if (open) RegenerateButton(enabled = !busy && summarised > 0, onClick = { processor.lately(recordings) })
+                Icon(
+                    Icons.Rounded.ExpandMore, if (open) "Fold Lately away" else "Show Lately", tint = color,
+                    modifier = Modifier.padding(12.dp).size(24.dp).rotate(turn),
+                )
             }
+            if (!open) return@Column
             val state = when {
                 busy -> 0
                 text != null -> 1
@@ -456,6 +477,7 @@ private fun RecordingDetail(
     val summary = remember(recording.id, tick) { notes.summary(recording.id) }
     var confirmDelete by remember { mutableStateOf(false) }
     val supported = Shruti.available
+    val playback = rememberPlayback(recording)
 
     LaunchedEffect(recording.id) {
         when {
@@ -499,7 +521,7 @@ private fun RecordingDetail(
                 )
             }
         }
-        item(key = "player") { Player(recording) }
+        item(key = "player") { Player(playback) }
         if (canSummarize != false || summary != null) {
             item(key = "summary") {
                 SummaryCard(
@@ -542,25 +564,39 @@ private fun RecordingDetail(
     }
 }
 
-@Composable
-private fun Player(recording: Recording) {
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
-    val player = remember(recording.id) { runCatching { MediaPlayer().apply { setDataSource(context, recording.uri); prepare() } }.getOrNull() }
-    DisposableEffect(player) { onDispose { player?.release() } }
-    var playing by remember { mutableStateOf(false) }
-    var position by remember { mutableIntStateOf(0) }
+/** a call's player, held by the page: a list item is dropped once it scrolls off, and the sound went with it */
+private class Playback(val player: MediaPlayer?) {
+    var playing by mutableStateOf(false)
+    var position by mutableIntStateOf(0)
     val length = player?.duration?.coerceAtLeast(1) ?: 1
-    DisposableEffect(player) {
-        player?.setOnCompletionListener { playing = false; position = 0 }
-        onDispose {}
+}
+
+@Composable
+private fun rememberPlayback(recording: Recording): Playback {
+    val context = LocalContext.current
+    val playback = remember(recording.id) {
+        Playback(runCatching { MediaPlayer().apply { setDataSource(context, recording.uri); prepare() } }.getOrNull())
     }
-    LaunchedEffect(playing) {
-        while (playing && player != null) {
-            position = player.currentPosition
+    DisposableEffect(playback) {
+        playback.player?.setOnCompletionListener { playback.playing = false; playback.position = 0 }
+        onDispose { playback.player?.release() }
+    }
+    LaunchedEffect(playback, playback.playing) {
+        while (playback.playing && playback.player != null) {
+            playback.position = playback.player.currentPosition
             delay(50)
         }
     }
+    return playback
+}
+
+@Composable
+private fun Player(playback: Playback) {
+    val haptics = LocalHapticFeedback.current
+    val player = playback.player
+    val playing = playback.playing
+    val position = playback.position
+    val length = playback.length
     // the button rounds into a circle while it plays and settles back into a soft square at rest
     val corner by animateIntAsState(if (playing) 50 else 30, MaterialTheme.motionScheme.fastSpatialSpec(), label = "shape")
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
@@ -568,8 +604,8 @@ private fun Player(recording: Recording) {
             FilledIconButton(
                 onClick = {
                     val p = player ?: return@FilledIconButton
-                    if (playing) { p.pause(); playing = false; haptics.performHapticFeedback(HapticFeedbackType.ToggleOff) }
-                    else { p.start(); playing = true; haptics.performHapticFeedback(HapticFeedbackType.ToggleOn) }
+                    if (playing) { p.pause(); playback.playing = false; haptics.performHapticFeedback(HapticFeedbackType.ToggleOff) }
+                    else { p.start(); playback.playing = true; haptics.performHapticFeedback(HapticFeedbackType.ToggleOn) }
                 },
                 enabled = player != null,
                 shape = RoundedCornerShape(corner),
@@ -582,7 +618,7 @@ private fun Player(recording: Recording) {
             Column(Modifier.weight(1f)) {
                 Slider(
                     value = position.toFloat() / length,
-                    onValueChange = { position = (it * length).toInt(); player?.seekTo(position) },
+                    onValueChange = { playback.position = (it * length).toInt(); player?.seekTo(playback.position) },
                     enabled = player != null,
                 )
                 Row {
@@ -693,3 +729,5 @@ private fun durationLabel(ms: Long): String {
     val seconds = ms / 1_000
     return if (seconds >= 3_600) "%d:%02d:%02d".format(seconds / 3_600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
 }
+
+private const val LATELY_OPEN = "lately_open"

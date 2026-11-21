@@ -50,11 +50,11 @@ class Capture(private val scratch: File, private val keep: File? = null, private
     }
 
     /** stops the microphones and writes the mixed call to [output], and who talked when to [turns]; false when nothing was recorded */
-    fun finish(output: FileDescriptor, turns: File? = null): Boolean {
+    fun finish(output: FileDescriptor, turns: File? = null, onStep: (Step) -> Unit = {}): Boolean {
         running = false
         worker.join(5_000)
         return try {
-            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns)
+            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns, onStep)
         } catch (e: Exception) {
             Log.w(TAG, "mixdown failed", e)
             false
@@ -130,8 +130,18 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         }
     }
 
-    private fun mixAndEncode(output: FileDescriptor, turns: File?): Boolean {
+    /** what the mixdown is doing, for the "Saving the call" note */
+    enum class Step(val label: String) {
+        Following("Following who's talking"),
+        Merging("Merging the two microphones"),
+        Cleaning("Taking out the background hiss"),
+        Voices("Telling your voice from theirs"),
+        Levelling("Evening out the loudness"),
+    }
+
+    private fun mixAndEncode(output: FileDescriptor, turns: File?, onStep: (Step) -> Unit): Boolean {
         // 1: how loud each microphone is, frame by frame, to follow whoever is talking between them
+        onStep(Step.Following)
         val bottomEnergy = ArrayList<Float>()
         val topEnergy = ArrayList<Float>()
         frames { bottom, top ->
@@ -141,6 +151,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         val weights = Mixdown.topWeights(bottomEnergy.toFloatArray(), topEnergy.toFloatArray())
 
         // 2: the two microphones merged into one
+        onStep(Step.Merging)
         val mixed = File(scratch.path + ".mixed")
         val clean = File(scratch.path + ".clean")
         try {
@@ -162,10 +173,12 @@ class Capture(private val scratch: File, private val keep: File? = null, private
             }
 
             // 3: the hiss taken out, and when anyone is talking
+            onStep(Step.Cleaning)
             val denoised = Denoiser.run(mixed, clean)
             mixed.delete()
 
             // 4: which voice each frame is
+            onStep(Step.Voices)
             val meter = Voices.Meter(Mixdown.RATE)
             val shapes = ArrayList<Voices.Shape>()
             pcmFrames(clean) { shapes += meter.shape(it) }
@@ -174,6 +187,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
             report(weights, denoised, shapes, talking, caller)
             turns?.let { runCatching { Turns.write(Turns.from(caller, talking), it) } }
 
+            onStep(Step.Levelling)
             // 5: each voice levelled on its own, the caller's thinner sound lifted where speech is made out;
             // the gates sit over what's left of the hiss after cleaning
             val residual = denoised.noise * RESIDUAL

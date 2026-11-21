@@ -35,7 +35,9 @@ import kotlin.concurrent.thread
  */
 class CallRecorder : AccessibilityService() {
     /** one call's recording: its file in the media library, open for writing, and the microphones */
-    private class Take(val uri: Uri, val output: ParcelFileDescriptor, val capture: Capture)
+    private class Take(val uri: Uri, val output: ParcelFileDescriptor, val capture: Capture, val who: String, val startedAt: Long) {
+        var endedAt = startedAt
+    }
 
     // Only the call being recorded. A finished call keeps its own Take while it mixes down, which
     // can outlast the next call's start: sharing one slot, a 23-minute call's mixdown published the
@@ -56,7 +58,7 @@ class CallRecorder : AccessibilityService() {
         // whatever an earlier run left half done: recordings published or dropped, raw sound deleted
         thread(name = "recover") {
             runCatching { Recordings.recoverPending(this, before = connected) }.onFailure { Log.w(TAG, "couldn't recover recordings", it) }
-            (getExternalFilesDir(null) ?: cacheDir).listFiles { file -> file.name.startsWith("call") && file.lastModified() < connected }
+            (getExternalFilesDir(null) ?: cacheDir).listFiles { file -> file.name.startsWith("call-") && file.lastModified() < connected }
                 ?.forEach { it.delete() }
         }
         // Tring is another app, so the receiver must be exported; it only records while a call holds the audio
@@ -101,7 +103,7 @@ class CallRecorder : AccessibilityService() {
                 keep = own?.let { File(it, "last-call.pcm") }, stats = own?.let { File(it, "calls.log") },
             )
             if (!capture.start()) error("no microphone")
-            take = Take(uri, output, capture)
+            take = Take(uri, output, capture, who, System.currentTimeMillis())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.addOnModeChangedListener(mainExecutor, callEnded)
             report(STATE_RECORDING)
         } catch (e: Exception) {
@@ -115,12 +117,14 @@ class CallRecorder : AccessibilityService() {
     private fun stop() {
         val call = take ?: return
         take = null
+        call.endedAt = System.currentTimeMillis()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.removeOnModeChangedListener(callEnded)
         report(STATE_OFF)
+        notifySaving(call, null)
         // the mixdown reads the whole call back, a minute or more for a long call, so it runs off the main thread
         thread(name = "mixdown") {
             // a call ended before any sound came through leaves nothing worth keeping
-            val kept = call.capture.finish(call.output.fileDescriptor, Notes(this).turnsFile(ContentUris.parseId(call.uri)))
+            val kept = call.capture.finish(call.output.fileDescriptor, Notes(this).turnsFile(ContentUris.parseId(call.uri))) { step -> notifySaving(call, step) }
             release(call, keep = kept)
         }
     }
@@ -136,8 +140,33 @@ class CallRecorder : AccessibilityService() {
             Recordings.get(this, ContentUris.parseId(uri))?.let { recording -> mainExecutor.execute { afterCall(uri, recording) } }
 
         } else {
+            getSystemService(NotificationManager::class.java).cancel(uri.hashCode())
             runCatching { contentResolver.delete(uri, null, null) }
         }
+    }
+
+    /**
+     * While a call mixes down, a minute or more after a long one, so its recording isn't simply
+     * missing. Silent; "Call recorded" takes its place, and it times out if the app is killed first.
+     */
+    private fun notifySaving(call: Take, step: Capture.Step?) {
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Saved recordings", NotificationManager.IMPORTANCE_LOW))
+        val minutes = ((call.endedAt - call.startedAt) / 60_000).coerceAtLeast(1)
+        val steps = Capture.Step.entries.size
+        manager.notify(
+            call.uri.hashCode(),
+            Notification.Builder(this, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle(if (call.who.isBlank()) "Saving the call" else "Saving the call with ${call.who}")
+                .setContentText("$minutes min · " + (step?.let { "${it.label}…" } ?: "ready in a moment"))
+                .setProgress(steps, step?.let { it.ordinal + 1 } ?: 0, step == null)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setTimeoutAfter(SAVING_TIMEOUT_MS)
+                .build(),
+        )
     }
 
     private fun notifySaved(uri: Uri) {
@@ -152,6 +181,7 @@ class CallRecorder : AccessibilityService() {
                 .setContentText("Tap to play it and read what was said")
                 .setContentIntent(openCall(uri))
                 .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
                 .build(),
         )
     }
@@ -202,6 +232,7 @@ class CallRecorder : AccessibilityService() {
     companion object {
         private const val TAG = "CallRecorder"
         private const val CHANNEL = "saved"
+        private const val SAVING_TIMEOUT_MS = 15 * 60_000L
         private const val SUMMARIES = "summaries"
         // the contract with Tring's Ghanti; Recorder.kt there holds the same strings
         const val ACTION_RECORD = "io.github.jaswantk917.tring.recorder.RECORD"
