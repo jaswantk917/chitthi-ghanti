@@ -27,6 +27,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -40,6 +42,7 @@ import io.github.jaswantk917.ghanti.data.Settings
 import io.github.jaswantk917.ghanti.ui.theme.GhantiTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -94,6 +97,21 @@ class AutoRecordScreensTest {
         rule.onNodeWithText("Everything is decided", substring = true).performScrollTo().assertIsDisplayed()
         assertEquals(0, rule.onAllNodesWithText("record", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
         assertEquals(0, rule.onAllNodesWithText("GitHub", substring = true).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun theSheetEndsWithRoomAboveTheNavigationBar() {
+        content { SettingsSheet(Settings(), Setup(true, true, true, false), onChange = {}, onMakeDefault = {}, onAllowNotifications = {}, onOpenBlocked = {}, onDismiss = {}, hasRecorder = true) }
+        repeat(4) {
+            rule.onNode(isDialog()).performTouchInput { swipeUp(startY = bottom * 0.8f, endY = bottom * 0.2f) }
+            rule.waitForIdle()
+        }
+        val footer = rule.onNodeWithText("Everything is decided", substring = true).assertIsDisplayed().fetchSemanticsNode().boundsInWindow
+        val window = rule.activity.window.decorView
+        val bar = window.rootWindowInsets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
+        val room = (window.height - bar - footer.bottom) / window.resources.displayMetrics.density
+        snap("settings-end", dialog = true)
+        assertTrue("only $room dp between the last line and the navigation bar", room >= 32f)
     }
 
     @Test
