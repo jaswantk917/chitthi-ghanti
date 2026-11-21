@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -30,6 +31,14 @@ import io.github.jaswantk917.ghanti.screen.Outcome
 import io.github.jaswantk917.ghanti.signals.Guess
 import io.github.jaswantk917.ghanti.ui.theme.GhantiTheme
 import io.github.jaswantk917.ghanti.ui.util.LocalBlur
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.performSemanticsAction
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
@@ -73,7 +82,7 @@ class InCallScreenTest {
         return Uri.fromFile(file)
     }
 
-    private fun show(call: CallUi, others: List<CallUi>, fontScale: Float = 1f, audio: CallAudioState = speaker) {
+    private fun show(call: CallUi, others: List<CallUi>, fontScale: Float = 1f, audio: CallAudioState = speaker, width: Dp? = null) {
         rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
         rule.mainClock.autoAdvance = false
         rule.setContent {
@@ -81,7 +90,9 @@ class InCallScreenTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 GhantiTheme(amoled = false) {
                     CompositionLocalProvider(LocalBlur provides GhantiApp.instance.prefs.settings.value.blur) {
-                        InCallScreen(call, others, audio, endedAt = null, noting = false, onNoting = {}, onAddCall = {})
+                        Box(if (width != null) Modifier.requiredWidth(width) else Modifier) {
+                            InCallScreen(call, others, audio, endedAt = null, noting = false, onNoting = {}, onAddCall = {})
+                        }
                     }
                 }
             }
@@ -146,10 +157,14 @@ class InCallScreenTest {
     }
 
     @Test
-    fun aGuessAndANoteShareALineAtLargeText() {
-        show(bistro, emptyList(), fontScale = 1.3f, audio = earpiece)
-        snap("guess-note-text-1.3")
-        rule.onNodeWithText("Note").assertIsDisplayed()
+    fun aGuessAndANoteShareALineAtLargeTextOnASmallPhone() {
+        show(bistro, emptyList(), fontScale = 1.3f, audio = earpiece, width = 360.dp)
+        snap("guess-note-360dp-text-1.3")
+        val layouts = mutableListOf<TextLayoutResult>()
+        rule.onNodeWithText("Bistro delivery").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertFalse("the guess is cut short", layouts.single().isLineEllipsized(0))
+        rule.onNodeWithContentDescription("Add a note").assertWidthIsAtLeast(40.dp)
+        rule.onNodeWithContentDescription("Add a note").assertIsDisplayed()
         rule.onNodeWithContentDescription("End call").assertHeightIsAtLeast(72.dp)
     }
 }

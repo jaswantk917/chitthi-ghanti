@@ -39,6 +39,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -282,13 +283,15 @@ fun InCallScreen(
             Spacer(Modifier.height(14.dp))
             // who it was and the note share a line: both are what you'd jot down about the call
             val hinted = call.phase == Phase.Ringing || call.outcome?.guess != null || (stranger && (memo?.label != null || before != null))
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            // on a small phone at large text the two don't fit side by side, so the note drops below
+            FlowRow(
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 if (hinted) {
-                    Box(Modifier.weight(1f, fill = false)) {
+                    Box {
                         Hints(
                             call, ended,
                             label = memo?.label?.takeIf { stranger },
@@ -512,6 +515,19 @@ private fun Pill(icon: ImageVector, text: String, strong: Boolean, action: Strin
 private fun NoteEntry(note: String, short: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
+    // beside a guess an empty note is just its button, so the guess isn't cut short
+    if (short && note.isBlank()) {
+        Box(
+            modifier
+                .size(40.dp)
+                .pressScale(interaction, 0.9f)
+                .clip(CircleShape)
+                .background(scheme.surfaceContainerHigh)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Rounded.EditNote, "Add a note", tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+        return
+    }
     Row(
         modifier
             .pressScale(interaction, 0.95f)
@@ -526,7 +542,7 @@ private fun NoteEntry(note: String, short: Boolean, onClick: () -> Unit, modifie
         Spacer(Modifier.width(if (short) 6.dp else 10.dp))
         AnimatedContent(note.isBlank(), label = "note") { empty ->
             Text(
-                if (empty) (if (short) "Note" else "Add a note") else note,
+                if (empty) "Add a note" else note,
                 style = if (empty) MaterialTheme.typography.labelLarge else MaterialTheme.typography.bodyMedium,
                 color = if (empty) scheme.onSurfaceVariant else scheme.onSurface,
                 maxLines = if (short) 1 else 2,
