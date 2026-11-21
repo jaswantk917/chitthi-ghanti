@@ -20,9 +20,11 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 /**
  * Records the microphone while Tring says a call is on. Android gives the microphone to the call
@@ -77,7 +79,7 @@ class CallRecorder : AccessibilityService() {
             val uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
             saved = uri
             output = contentResolver.openFileDescriptor(uri, "w")
-            val capture = Capture(output!!.fileDescriptor)
+            val capture = Capture(File(cacheDir, "call.pcm"))
             if (!capture.start()) {
                 release(keep = false)
                 return report(STATE_OFF)
@@ -93,12 +95,16 @@ class CallRecorder : AccessibilityService() {
     }
 
     private fun stop() {
-        if (recorder == null) return
+        val capture = recorder ?: return
+        recorder = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.removeOnModeChangedListener(callEnded)
-        // a call ended before any sound came through leaves nothing worth keeping
-        val kept = recorder?.stop() == true
-        release(keep = kept)
         report(STATE_OFF)
+        // the mixdown reads the whole call back, seconds of work, so it runs off the main thread
+        thread(name = "mixdown") {
+            // a call ended before any sound came through leaves nothing worth keeping
+            val kept = output?.let { capture.finish(it.fileDescriptor) } == true
+            release(keep = kept)
+        }
     }
 
     private fun release(keep: Boolean) {

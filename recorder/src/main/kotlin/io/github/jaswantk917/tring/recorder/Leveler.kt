@@ -10,7 +10,7 @@ import kotlin.math.tanh
  * speaker, so one side always comes out faint. Gain follows a slow envelope of the signal, capped,
  * and is held back on near silence so the room's hiss isn't lifted with it.
  */
-class Leveler(sampleRate: Int) {
+class Leveler(sampleRate: Int, private val gate: Float = GATE) {
     private val attack = 1f - exp(-1f / (0.01f * sampleRate))
     private val release = 1f - exp(-1f / (0.4f * sampleRate))
     private val glide = 1f - exp(-1f / (0.08f * sampleRate))
@@ -22,7 +22,7 @@ class Leveler(sampleRate: Int) {
         val level = abs(x)
         envelope += (level - envelope) * (if (level > envelope) attack else release)
         val wanted = when {
-            envelope < GATE -> 1f
+            envelope < gate -> 1f
             else -> (TARGET / envelope).coerceIn(MIN_GAIN, MAX_GAIN)
         }
         gain += (wanted - gain) * glide
@@ -35,7 +35,7 @@ class Leveler(sampleRate: Int) {
         /** 24 dB: enough to bring a leak from the earpiece up to talking level */
         const val MAX_GAIN = 16f
         const val MIN_GAIN = 0.5f
-        /** about -52 dBFS: below this is room noise, left as it is */
+        /** about -52 dBFS: below this is room noise, left as it is; the recorder measures each phone's own */
         const val GATE = 0.0025f
     }
 }
