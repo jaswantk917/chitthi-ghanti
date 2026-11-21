@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.jaswantk917.tring.recorder"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull
@@ -46,4 +46,8 @@ android {
     kotlin {
         compilerOptions { jvmTarget = JvmTarget.fromTarget(libs.versions.java.get()) }
     }
+}
+
+dependencies {
+    testImplementation(libs.junit)
 }

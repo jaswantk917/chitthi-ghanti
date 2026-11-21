@@ -13,7 +13,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -32,7 +31,7 @@ import java.util.Locale
  * speaker is near the microphone, since only system apps may record the call line itself.
  */
 class CallRecorder : AccessibilityService() {
-    private var recorder: MediaRecorder? = null
+    private var recorder: Capture? = null
     private var output: ParcelFileDescriptor? = null
     private var saved: Uri? = null
     private val audio by lazy { getSystemService(AudioManager::class.java) }
@@ -78,18 +77,12 @@ class CallRecorder : AccessibilityService() {
             val uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
             saved = uri
             output = contentResolver.openFileDescriptor(uri, "w")
-            recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(this) else @Suppress("DEPRECATION") MediaRecorder()).apply {
-                // the raw microphone, without the noise suppression that would cut the earpiece's sound
-                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioChannels(1)
-                setAudioSamplingRate(44_100)
-                setAudioEncodingBitRate(96_000)
-                setOutputFile(output!!.fileDescriptor)
-                prepare()
-                start()
+            val capture = Capture(output!!.fileDescriptor)
+            if (!capture.start()) {
+                release(keep = false)
+                return report(STATE_OFF)
             }
+            recorder = capture
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.addOnModeChangedListener(mainExecutor, callEnded)
             report(STATE_RECORDING)
         } catch (e: Exception) {
@@ -102,14 +95,13 @@ class CallRecorder : AccessibilityService() {
     private fun stop() {
         if (recorder == null) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.removeOnModeChangedListener(callEnded)
-        // stop() throws when nothing was recorded yet; that file is dropped
-        val kept = runCatching { recorder?.stop() }.isSuccess
+        // a call ended before any sound came through leaves nothing worth keeping
+        val kept = recorder?.stop() == true
         release(keep = kept)
         report(STATE_OFF)
     }
 
     private fun release(keep: Boolean) {
-        recorder?.release()
         recorder = null
         runCatching { output?.close() }
         output = null

@@ -1,0 +1,41 @@
+package io.github.jaswantk917.tring.recorder
+
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.tanh
+
+/**
+ * Brings whoever is quiet up to the loud one's level, one microphone at a time. The phone's
+ * microphones hear the caller only as a leak from the earpiece, or hear you from arm's length on
+ * speaker, so one side always comes out faint. Gain follows a slow envelope of the signal, capped,
+ * and is held back on near silence so the room's hiss isn't lifted with it.
+ */
+class Leveler(sampleRate: Int) {
+    private val attack = 1f - exp(-1f / (0.01f * sampleRate))
+    private val release = 1f - exp(-1f / (0.4f * sampleRate))
+    private val glide = 1f - exp(-1f / (0.08f * sampleRate))
+    private var envelope = 0f
+    private var gain = 1f
+
+    /** [x] and the result are in -1..1 */
+    fun process(x: Float): Float {
+        val level = abs(x)
+        envelope += (level - envelope) * (if (level > envelope) attack else release)
+        val wanted = when {
+            envelope < GATE -> 1f
+            else -> (TARGET / envelope).coerceIn(MIN_GAIN, MAX_GAIN)
+        }
+        gain += (wanted - gain) * glide
+        return tanh(x * gain)
+    }
+
+    companion object {
+        /** the envelope speech settles at: about -14 dBFS */
+        const val TARGET = 0.2f
+        /** 24 dB: enough to bring a leak from the earpiece up to talking level */
+        const val MAX_GAIN = 16f
+        const val MIN_GAIN = 0.5f
+        /** about -52 dBFS: below this is room noise, left as it is */
+        const val GATE = 0.0025f
+    }
+}
