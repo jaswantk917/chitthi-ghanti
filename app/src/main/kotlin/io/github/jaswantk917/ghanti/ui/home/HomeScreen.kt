@@ -54,6 +54,7 @@ import androidx.compose.material.icons.automirrored.rounded.CallMade
 import androidx.compose.material.icons.automirrored.rounded.CallMissed
 import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.automirrored.rounded.Notes
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.FiberManualRecord
@@ -592,6 +593,10 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
                         Spacer(Modifier.width(6.dp))
                         Icon(Icons.AutoMirrored.Rounded.Notes, "Has a note", tint = scheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                     }
+                    if (row.recordings.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Rounded.GraphicEq, "Recorded", tint = scheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                    }
                 }
             }
             if (row.group.number.isNotBlank()) {
@@ -624,6 +629,7 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
                             color = scheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 1.dp),
                         )
+                        row.recordings[e.id]?.let { RecordingPlayer(it) }
                         row.memos[e.id]?.note?.takeIf { it.isNotBlank() }?.let { note ->
                             Text(
                                 note,

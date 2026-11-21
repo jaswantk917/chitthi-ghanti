@@ -113,6 +113,7 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 1.25:
 
 ```
+A recorded call can be played right in Recents, under that call, with a few lines on what it was about.
 A missed call you swipe away comes back once an hour later, unless you've called back or opened Tring. Turn these reminders off on their own in notification settings.
 Answering a call no longer leaves its notification popped up over the screen.
 ```
