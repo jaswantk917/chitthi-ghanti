@@ -110,6 +110,12 @@ The in-call service runs in the foreground during a call to show the ongoing-cal
 
 ## Release notes
 
+1.27:
+
+```
+A recording in Recents keeps playing while you scroll, and stops when you fold its call away.
+```
+
 1.26:
 
 ```

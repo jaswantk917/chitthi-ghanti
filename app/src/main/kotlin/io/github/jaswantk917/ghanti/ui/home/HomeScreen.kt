@@ -430,6 +430,12 @@ private fun RecentsPage(
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var memoFor by remember { mutableStateOf<RecentRow?>(null) }
+    val playback = rememberRecentsPlayback()
+    // folding the row away stops its recording, rather than leaving sound with no button to stop it
+    LaunchedEffect(open) {
+        val playingIn = recents.firstOrNull { row -> row.recordings.values.any { it.id == playback.id } }?.group?.key
+        if (playback.id != null && playingIn != open) playback.stop()
+    }
     LazyColumn(state = list, contentPadding = padding, modifier = Modifier.fillMaxSize()) {
         if (!setup.isPhoneApp) {
             item(key = "setup-phone") {
@@ -478,6 +484,7 @@ private fun RecentsPage(
                     onToggle = { open = if (open == row.group.key) null else row.group.key },
                     onMemo = { memoFor = row },
                     actions = actions,
+                    playback = playback,
                     modifier = Modifier.animateItem(),
                 )
             }
@@ -507,7 +514,7 @@ private fun hintFor(tag: String) = when {
 }
 
 @Composable
-private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMemo: () -> Unit, actions: HomeActions, modifier: Modifier = Modifier) {
+private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMemo: () -> Unit, actions: HomeActions, playback: RecentsPlayback, modifier: Modifier = Modifier) {
     val haptics = rememberHaptics()
     val scheme = MaterialTheme.colorScheme
     val latest = row.group.latest
@@ -629,7 +636,7 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
                             color = scheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 1.dp),
                         )
-                        row.recordings[e.id]?.let { RecordingPlayer(it) }
+                        row.recordings[e.id]?.let { RecordingPlayer(it, playback) }
                         row.memos[e.id]?.note?.takeIf { it.isNotBlank() }?.let { note ->
                             Text(
                                 note,

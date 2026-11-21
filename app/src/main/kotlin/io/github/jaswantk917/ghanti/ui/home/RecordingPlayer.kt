@@ -1,5 +1,6 @@
 package io.github.jaswantk917.ghanti.ui.home
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import androidx.compose.animation.AnimatedContent
@@ -48,46 +49,95 @@ import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import kotlinx.coroutines.delay
 
-/** A recorded call under its line in Recents: play, scrub, what it was about, and its transcript in the recorder. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-internal fun RecordingPlayer(recording: CallRecording, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val haptics = rememberHaptics()
-    val scheme = MaterialTheme.colorScheme
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
-    var playing by remember { mutableStateOf(false) }
-    var position by remember { mutableIntStateOf(0) }
-    var failed by remember { mutableStateOf(false) }
-    val length = recording.durationMs.toInt().coerceAtLeast(1)
+/**
+ * The one recording playing in Recents, held by the page rather than the row: a row scrolled off
+ * the list is dropped, and the sound used to go with it.
+ */
+internal class RecentsPlayback(private val context: Context) {
+    var id by mutableStateOf<Long?>(null)
+        private set
+    var playing by mutableStateOf(false)
+        private set
+    var position by mutableIntStateOf(0)
+        private set
+    var failed by mutableStateOf<Long?>(null)
+        private set
+    private var player: MediaPlayer? = null
 
-    DisposableEffect(recording.id) {
-        onDispose {
-            player?.release()
-            player = null
+    fun positionOf(recording: CallRecording) = if (id == recording.id) position else 0
+
+    fun toggle(recording: CallRecording) {
+        val p = playerFor(recording) ?: return
+        if (p.isPlaying) p.pause() else p.start()
+        playing = p.isPlaying
+    }
+
+    fun seek(recording: CallRecording, to: Int) {
+        val p = playerFor(recording) ?: return
+        position = to
+        p.seekTo(to)
+    }
+
+    /** while playing, where it's got to */
+    fun tick() {
+        player?.takeIf { playing }?.let { position = it.currentPosition }
+    }
+
+    fun stop() {
+        player?.release()
+        player = null
+        id = null
+        playing = false
+        position = 0
+    }
+
+    private fun playerFor(recording: CallRecording): MediaPlayer? {
+        if (id == recording.id) return player
+        stop()
+        return runCatching {
+            MediaPlayer().apply {
+                setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                // the recorder hands over the file itself; safe to close once the player has it
+                context.contentResolver.openFileDescriptor(CallRecordings.sound(recording.id), "r")!!.use { setDataSource(it.fileDescriptor) }
+                prepare()
+                setOnCompletionListener {
+                    playing = false
+                    position = 0
+                    it.seekTo(0)
+                }
+            }
+        }.onFailure { failed = recording.id }.getOrNull()?.also {
+            player = it
+            id = recording.id
         }
     }
-    LaunchedEffect(playing) {
-        while (playing) {
-            player?.let { position = it.currentPosition }
+}
+
+@Composable
+internal fun rememberRecentsPlayback(): RecentsPlayback {
+    val context = LocalContext.current
+    val playback = remember { RecentsPlayback(context.applicationContext) }
+    DisposableEffect(playback) { onDispose { playback.stop() } }
+    LaunchedEffect(playback.playing) {
+        while (playback.playing) {
+            playback.tick()
             delay(200)
         }
     }
+    return playback
+}
 
-    fun prepared(): MediaPlayer? = player ?: runCatching {
-        MediaPlayer().apply {
-            setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-            // the recorder hands over the file itself; safe to close once the player has it
-            context.contentResolver.openFileDescriptor(CallRecordings.sound(recording.id), "r")!!.use { setDataSource(it.fileDescriptor) }
-            prepare()
-            seekTo(position)
-            setOnCompletionListener {
-                playing = false
-                position = 0
-                it.seekTo(0)
-            }
-        }
-    }.onFailure { failed = true }.getOrNull()?.also { player = it }
+/** A recorded call under its line in Recents: play, scrub, what it was about, and its transcript in the recorder. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun RecordingPlayer(recording: CallRecording, playback: RecentsPlayback, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val haptics = rememberHaptics()
+    val scheme = MaterialTheme.colorScheme
+    val playing = playback.id == recording.id && playback.playing
+    val position = playback.positionOf(recording)
+    val failed = playback.failed == recording.id
+    val length = recording.durationMs.toInt().coerceAtLeast(1)
 
     Column(
         modifier
@@ -102,9 +152,7 @@ internal fun RecordingPlayer(recording: CallRecording, modifier: Modifier = Modi
             FilledIconButton(
                 onClick = {
                     haptics.play(Haptic.Tap)
-                    val p = prepared() ?: return@FilledIconButton
-                    if (p.isPlaying) p.pause() else p.start()
-                    playing = p.isPlaying
+                    playback.toggle(recording)
                 },
                 enabled = !failed,
                 shape = pressMorph(MaterialShapes.Circle, MaterialShapes.Cookie6Sided, press),
@@ -117,10 +165,7 @@ internal fun RecordingPlayer(recording: CallRecording, modifier: Modifier = Modi
             Spacer(Modifier.width(4.dp))
             Slider(
                 value = position.toFloat().coerceIn(0f, length.toFloat()),
-                onValueChange = { to ->
-                    position = to.toInt()
-                    player?.seekTo(position)
-                },
+                onValueChange = { to -> playback.seek(recording, to.toInt()) },
                 valueRange = 0f..length.toFloat(),
                 enabled = !failed,
                 modifier = Modifier.weight(1f),
