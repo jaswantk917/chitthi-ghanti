@@ -15,21 +15,28 @@ import java.io.DataInputStream
 import java.io.EOFException
 import java.io.File
 import java.io.FileDescriptor
+import java.io.RandomAccessFile
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.concurrent.thread
-import kotlin.math.sqrt
 
 /**
  * During the call: the raw microphones to a scratch file, two channels when the phone offers them.
  * Phones place and pair their microphones differently, so nothing assumes which channel is where.
  * After the call: [Mixdown] follows whoever is talking from one channel to the other by measurement,
- * [Voices] tells you and the caller apart, each gets its own [Leveler] so the caller comes up to
- * your loudness, and the result is encoded to .m4a. Working after the call lets every choice look
- * ahead and smooth both ways.
+ * [Denoiser] takes out the hiss and marks when anyone talks, [Voices] tells you and the caller
+ * apart, each gets its own [Leveler] so the caller comes up to your loudness, and the result is
+ * encoded to .m4a. Working after the call lets every choice look ahead and smooth both ways.
+ *
+ * [stats] gets one line of numbers per call, and [keep] the raw microphones of the last call (its
+ * first five minutes), both in the app's own folder that a computer can read over USB, so a bad
+ * recording can be traced and the processing replayed on it.
  */
 @SuppressLint("MissingPermission") // CallRecorder checks RECORD_AUDIO before starting
-class Capture(private val scratch: File) {
+class Capture(private val scratch: File, private val keep: File? = null, private val stats: File? = null) {
     @Volatile private var running = true
     private lateinit var worker: Thread
     private var channels = 1
@@ -52,7 +59,8 @@ class Capture(private val scratch: File) {
             Log.w(TAG, "mixdown failed", e)
             false
         } finally {
-            scratch.delete()
+            if (keep == null || !scratch.renameTo(keep)) scratch.delete()
+            else if (keep.length() > KEEP_BYTES * channels) RandomAccessFile(keep, "rw").use { it.setLength(KEEP_BYTES * channels) }
         }
     }
 
@@ -131,66 +139,108 @@ class Capture(private val scratch: File) {
             topEnergy += top.fold(0f) { sum, x -> sum + x * x } / top.size
         }
         val weights = Mixdown.topWeights(bottomEnergy.toFloatArray(), topEnergy.toFloatArray())
-        // this phone's own hiss, as measured in this call, rather than one level for every phone
-        val hissEnergy = minOf(Mixdown.noiseFloor(bottomEnergy.toFloatArray()), Mixdown.noiseFloor(topEnergy.toFloatArray()))
-        val hiss = sqrt(hissEnergy)
 
-        // 2: the two microphones merged into one, and which voice each frame is
-        val mixedFile = File(scratch.path + ".mixed")
-        val meter = Voices.Meter(Mixdown.RATE)
-        val shapes = ArrayList<Voices.Shape>()
-        val frame = FloatArray(Mixdown.FRAME)
-        val bytes = ByteBuffer.allocate(Mixdown.FRAME * 2).order(ByteOrder.LITTLE_ENDIAN)
-        var index = 0
-        BufferedOutputStream(mixedFile.outputStream(), 1 shl 16).use { out ->
-            frames { bottom, top ->
-                val from = weights.getOrElse(index - 1) { weights[0] }
-                val to = weights[index.coerceAtMost(weights.lastIndex)]
-                bytes.clear()
-                for (i in 0 until Mixdown.FRAME) {
-                    // the weight glides across the frame so neighbouring frames join without a step
-                    val w = from + (to - from) * i / Mixdown.FRAME
-                    frame[i] = w * top[i] + (1f - w) * bottom[i]
-                    bytes.putShort((frame[i].coerceIn(-1f, 1f) * 32767f).toInt().toShort())
-                }
-                shapes += meter.shape(frame)
-                out.write(bytes.array())
-                index++
-            }
-        }
-        val caller = Voices.callerWeights(shapes, floorDb = 10f * kotlin.math.log10(hissEnergy + 1e-12f))
-        Log.i(
-            TAG,
-            "$channels channel(s), ${weights.size} frames, second channel ${percent(weights)}%, caller ${percent(caller)}%, " +
-                "loudest ${bottomEnergy.max()} / ${topEnergy.max()}, hiss $hissEnergy",
-        )
-
-        // 3: each voice levelled on its own, the caller's thinner sound lifted where speech is made out
-        val you = Leveler(Mixdown.RATE, gate = (hiss * 2.5f).coerceIn(0.0005f, 0.02f))
-        val them = Leveler(Mixdown.RATE, gate = (hiss * 1.5f).coerceIn(0.0003f, 0.02f), maxGain = CALLER_MAX_GAIN)
-        val presence = Biquad.peak(Mixdown.RATE, 2_000f, 4f)
-        val encoder = Encoder(output)
-        val out = ShortArray(Mixdown.FRAME)
-        val raw = ByteArray(Mixdown.FRAME * 2)
+        // 2: the two microphones merged into one
+        val mixed = File(scratch.path + ".mixed")
+        val clean = File(scratch.path + ".clean")
         try {
-            DataInputStream(BufferedInputStream(mixedFile.inputStream(), 1 shl 16)).use { input ->
-                for (f in caller.indices) {
-                    input.readFully(raw)
-                    val samples = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-                    val c = caller[f]
+            val bytes = ByteBuffer.allocate(Mixdown.FRAME * 2).order(ByteOrder.LITTLE_ENDIAN)
+            var index = 0
+            BufferedOutputStream(mixed.outputStream(), 1 shl 16).use { out ->
+                frames { bottom, top ->
+                    val from = weights.getOrElse(index - 1) { weights[0] }
+                    val to = weights[index.coerceAtMost(weights.lastIndex)]
+                    bytes.clear()
                     for (i in 0 until Mixdown.FRAME) {
-                        val x = samples.get(i) / 32768f
-                        val lifted = presence.process(x)
-                        val y = c * them.process(lifted, listen = c > 0.5f) + (1f - c) * you.process(x, listen = c <= 0.5f)
-                        out[i] = (y * 32767f).toInt().toShort()
+                        // the weight glides across the frame so neighbouring frames join without a step
+                        val w = from + (to - from) * i / Mixdown.FRAME
+                        bytes.putShort(((w * top[i] + (1f - w) * bottom[i]).coerceIn(-1f, 1f) * 32767f).toInt().toShort())
                     }
-                    encoder.write(out)
+                    out.write(bytes.array())
+                    index++
                 }
             }
+
+            // 3: the hiss taken out, and when anyone is talking
+            val denoised = Denoiser.run(mixed, clean)
+            mixed.delete()
+
+            // 4: which voice each frame is
+            val meter = Voices.Meter(Mixdown.RATE)
+            val shapes = ArrayList<Voices.Shape>()
+            pcmFrames(clean) { shapes += meter.shape(it) }
+            val talking = BooleanArray(shapes.size) { denoised.speechAt(it * Mixdown.FRAME + Mixdown.FRAME / 2) }
+            val caller = Voices.callerWeights(shapes, talking)
+            report(weights, denoised, shapes, talking, caller)
+
+            // 5: each voice levelled on its own, the caller's thinner sound lifted where speech is made out;
+            // the gates sit over what's left of the hiss after cleaning
+            val residual = denoised.noise * RESIDUAL
+            val you = Leveler(Mixdown.RATE, gate = (residual * 3f).coerceIn(0.0003f, 0.02f))
+            val them = Leveler(Mixdown.RATE, gate = (residual * 2f).coerceIn(0.0002f, 0.02f), maxGain = CALLER_MAX_GAIN)
+            val presence = Biquad.peak(Mixdown.RATE, 2_000f, 4f)
+            val encoder = Encoder(output)
+            val out = ShortArray(Mixdown.FRAME)
+            var f = 0
+            pcmFrames(clean) { frame ->
+                val c = caller[f.coerceAtMost(caller.lastIndex)]
+                for (i in 0 until Mixdown.FRAME) {
+                    val x = frame[i]
+                    val speech = denoised.speechAt(f * Mixdown.FRAME + i)
+                    val y = c * them.process(presence.process(x), listen = c > 0.5f, speech = speech) +
+                        (1f - c) * you.process(x, listen = c <= 0.5f, speech = speech)
+                    out[i] = (y * 32767f).toInt().toShort()
+                }
+                encoder.write(out)
+                f++
+            }
+            return encoder.finish()
         } finally {
-            mixedFile.delete()
+            mixed.delete()
+            clean.delete()
         }
-        return encoder.finish()
+    }
+
+    /** mono 16-bit PCM, one [Mixdown.FRAME] at a time */
+    private fun pcmFrames(file: File, block: (FloatArray) -> Unit) {
+        val frame = FloatArray(Mixdown.FRAME)
+        val raw = ByteArray(Mixdown.FRAME * 2)
+        DataInputStream(BufferedInputStream(file.inputStream(), 1 shl 16)).use { input ->
+            while (true) {
+                try {
+                    input.readFully(raw)
+                } catch (_: EOFException) {
+                    return
+                }
+                val samples = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                for (i in 0 until Mixdown.FRAME) frame[i] = samples.get(i) / 32768f
+                block(frame)
+            }
+        }
+    }
+
+    /** one line per call: enough to tell afterwards why a recording sounds the way it does */
+    private fun report(weights: FloatArray, denoised: Denoiser.Result, shapes: List<Voices.Shape>, talking: BooleanArray, caller: FloatArray) {
+        val spoken = shapes.indices.filter { talking[it] }
+        fun median(frames: List<Int>) = frames.map { shapes[it].levelDb }.sorted().let { if (it.isEmpty()) Float.NaN else it[it.size / 2] }
+        val you = median(spoken.filter { caller[it] <= 0.5f })
+        val them = median(spoken.filter { caller[it] > 0.5f })
+        val line = String.format(
+            Locale.ROOT,
+            "%s  %ds  %d mic  second mic %d%%  hiss %.0f dB  talking %d%%  caller %d%% of it  you %.0f dB  caller %.0f dB",
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).format(Date()),
+            shapes.size / 50, channels, percent(weights), denoised.noiseDb,
+            spoken.size * 100 / shapes.size.coerceAtLeast(1),
+            spoken.count { caller[it] > 0.5f } * 100 / spoken.size.coerceAtLeast(1),
+            you, them,
+        )
+        Log.i(TAG, line)
+        val file = stats ?: return
+        runCatching {
+            // a few hundred calls at most, so it never grows past a few tens of KB
+            val lines = if (file.exists()) file.readLines().takeLast(300) else emptyList()
+            file.writeText((lines + line).joinToString("\n", postfix = "\n"))
+        }
     }
 
     private fun percent(weights: FloatArray) = weights.count { it > 0.5f } * 100 / weights.size.coerceAtLeast(1)
@@ -269,5 +319,9 @@ class Capture(private val scratch: File) {
         private const val TAG = "Capture"
         /** 36 dB: the caller arrives thin and quiet, measured 8 to 15 dB under you even after 24 dB of lift */
         private const val CALLER_MAX_GAIN = 64f
+        /** the hiss left after [Denoiser]: at most 15 dB down */
+        private const val RESIDUAL = 0.18f
+        /** five minutes of one channel of the raw call */
+        private const val KEEP_BYTES = 5L * 60 * Mixdown.RATE * 2
     }
 }

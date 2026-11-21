@@ -32,7 +32,7 @@ class VoicesTest {
         val meter = Voices.Meter(rate)
         val shapes = (0 until signal.size / Mixdown.FRAME).map { f -> meter.shape(signal.copyOfRange(f * Mixdown.FRAME, (f + 1) * Mixdown.FRAME)) }
         val floor = shapes.map { it.levelDb }.sorted()[shapes.size / 10]
-        return Voices.callerWeights(shapes, floor)
+        return Voices.callerWeights(shapes, BooleanArray(shapes.size) { shapes[it].levelDb > floor + 8 })
     }
 
     /** share of frames in [from, to) seconds judged the caller, skipping the hand-over edges */

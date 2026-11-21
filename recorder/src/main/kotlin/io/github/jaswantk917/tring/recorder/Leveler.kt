@@ -15,16 +15,21 @@ class Leveler(sampleRate: Int, private val gate: Float = GATE, private val maxGa
     private val release = 1f - exp(-1f / (0.4f * sampleRate))
     private val glide = 1f - exp(-1f / (0.08f * sampleRate))
     private val duck = 1f - exp(-1f / (0.001f * sampleRate))
+    private val relax = 1f - exp(-1f / (0.5f * sampleRate))
     private var envelope = 0f
     private var gain = 1f
 
     /**
      * [x] and the result are in -1..1. With [listen] false the gain is applied but not changed:
-     * while the other voice talks, this one's level shouldn't follow it.
+     * while the other voice talks, this one's level shouldn't follow it. With [speech] false
+     * nobody is talking: the gain drifts back to as recorded, slowly enough that the gaps between
+     * words keep it, so a pause isn't lifted to talking level with its hiss.
      */
-    fun process(x: Float, listen: Boolean = true): Float {
+    fun process(x: Float, listen: Boolean = true, speech: Boolean = true): Float {
         val level = abs(x)
-        if (listen) {
+        if (!speech) {
+            gain += (1f - gain) * relax
+        } else if (listen) {
             envelope += (level - envelope) * (if (level > envelope) attack else release)
             val wanted = when {
                 envelope < gate -> 1f

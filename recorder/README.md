@@ -11,6 +11,9 @@ Once it's installed and switched on, Tring's call screen gets a **Record** butto
 You need Tring as your phone app (its Ghanti side), on Android 10 or newer.
 
 1. **Download** `tring-recorder-x.y.apk` from [Releases](https://github.com/jaswantk917/tring-recorder/releases) on your phone and open it. If Android asks, allow your browser or file manager to install apps.
+   - **"Blocked by Play Protect"?** In India and some other countries, Google blocks apps downloaded from a browser or file manager if they ask for Accessibility, which this one needs to record. Either:
+     - pause it for the install: **Play Store → your picture → Play Protect → ⚙ → turn off Scan apps with Play Protect**, install, and turn it back on (the recorder reminds you), or
+     - install from a computer instead: `adb install tring-recorder-x.y.apk`, which isn't blocked.
 2. **Open Tring Recorder** and tap **Allow** next to *Microphone*, then next to *A note when a recording is saved*.
 3. Tap **Open** next to *Turn on Tring Recorder in Accessibility*, pick **Tring Recorder**, and switch it on.
 4. **Is the switch greyed out?** Android 13 and newer block Accessibility for apps installed from a file until you say otherwise:

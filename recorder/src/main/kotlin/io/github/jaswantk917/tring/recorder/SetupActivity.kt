@@ -57,6 +57,12 @@ class SetupActivity : Activity() {
             })
         }
         if (mic && serviceOn()) steps.addView(text("All set. Recordings go to Recordings/Tring.", 18f, bold = true, top = 24))
+        // Play Protect blocks a downloaded app that asks for Accessibility (India and a few other countries),
+        // so the guide has people pause its scanning to install; this is where they're reminded to undo it
+        steps.addView(text("Paused Play Protect to install this? Turn it back on: Play Store → your picture → Play Protect → ⚙ → Scan apps with Play Protect.", 14f, top = 24))
+        steps.addView(button("Open Play Protect") {
+            runCatching { startActivity(Intent("com.google.android.gms.settings.VERIFY_APPS_SETTINGS")) }
+        })
     }
 
     private fun step(title: String, done: Boolean, action: String, onClick: () -> Unit) {

@@ -79,7 +79,9 @@ class CallRecorder : AccessibilityService() {
             val uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
             saved = uri
             output = contentResolver.openFileDescriptor(uri, "w")
-            val capture = Capture(File(cacheDir, "call.pcm"))
+            // the app's own folder on shared storage, readable over USB: the last call's raw sound and the per-call numbers
+            val own = getExternalFilesDir(null)
+            val capture = Capture(File(own ?: cacheDir, "call.pcm"), keep = own?.let { File(it, "last-call.pcm") }, stats = own?.let { File(it, "calls.log") })
             if (!capture.start()) {
                 release(keep = false)
                 return report(STATE_OFF)

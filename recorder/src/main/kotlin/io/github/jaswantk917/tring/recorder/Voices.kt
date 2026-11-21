@@ -30,6 +30,7 @@ object Voices {
      * -6 dB instead of -11 to -24) for those thresholds to hold.
      */
     class Meter(private val rate: Int) {
+        private val fft = Fft(SIZE)
         private val re = DoubleArray(SIZE)
         private val im = DoubleArray(SIZE)
         private val window = DoubleArray(Mixdown.FRAME) { 0.5 - 0.5 * cos(2 * PI * it / (Mixdown.FRAME - 1)) }
@@ -38,7 +39,7 @@ object Voices {
             re.fill(0.0)
             im.fill(0.0)
             for (i in frame.indices) re[i] = frame[i] * window[i]
-            fft(re, im)
+            fft.forward(re, im)
             var bass = 0.0
             var middle = 0.0
             var top = 0.0
@@ -58,49 +59,23 @@ object Voices {
 
         private fun db(energy: Double) = (10 * log10(energy + 1e-18)).toFloat()
 
-        companion object {
-            private const val SIZE = 512
-
-            /** in-place radix-2 FFT */
-            private fun fft(re: DoubleArray, im: DoubleArray) {
-                val n = re.size
-                var j = 0
-                for (i in 1 until n) {
-                    var bit = n shr 1
-                    while (j and bit != 0) { j = j xor bit; bit = bit shr 1 }
-                    j = j xor bit
-                    if (i < j) { re[i] = re[j].also { re[j] = re[i] }; im[i] = im[j].also { im[j] = im[i] } }
-                }
-                var len = 2
-                while (len <= n) {
-                    val angle = -2 * PI / len
-                    for (i in 0 until n step len) {
-                        for (k in 0 until len / 2) {
-                            val wr = cos(angle * k); val wi = sin(angle * k)
-                            val a = i + k; val b = a + len / 2
-                            val xr = re[b] * wr - im[b] * wi; val xi = re[b] * wi + im[b] * wr
-                            re[b] = re[a] - xr; im[b] = im[a] - xi
-                            re[a] += xr; im[a] += xi
-                        }
-                    }
-                    len = len shl 1
-                }
-            }
+        private companion object {
+            const val SIZE = 512
         }
     }
 
     /**
-     * For each frame, how much it is the other person, 0..1. [floorDb]: this call's background
-     * level; frames within [SPEECH_DB] of it are pauses and keep the last answer. A short majority
-     * vote either side stops single frames from flickering the gain.
+     * For each frame, how much it is the other person, 0..1. [talking]: per frame, whether anyone
+     * is (from [Denoiser]); pauses keep the last answer. A short majority vote either side stops
+     * single frames from flickering the gain.
      */
-    fun callerWeights(shapes: List<Shape>, floorDb: Float): FloatArray {
-        val speech = shapes.indices.filter { shapes[it].levelDb > floorDb + SPEECH_DB }
+    fun callerWeights(shapes: List<Shape>, talking: BooleanArray): FloatArray {
+        val speech = shapes.indices.filter { talking[it] }
         val far = farFrames(shapes, speech)
         val raw = FloatArray(shapes.size)
         var last = 0f
         for (i in shapes.indices) {
-            if (shapes[i].levelDb > floorDb + SPEECH_DB) last = if (i in far) 1f else 0f
+            if (talking[i]) last = if (i in far) 1f else 0f
             raw[i] = last
         }
         val voted = FloatArray(raw.size) { i ->
@@ -151,8 +126,6 @@ object Voices {
 
     /** 5 frames either side: 100 ms */
     private const val VOTE = 5
-    /** frames this far over the background are someone talking */
-    private const val SPEECH_DB = 8f
     /** two groups closer than this in loudness are one voice, split by how its sounds vary */
     private const val ONE_VOICE_DB = 8f
     /** a second of speech before there's anything to learn from */

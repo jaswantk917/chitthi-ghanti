@@ -14,8 +14,8 @@ android {
         applicationId = "io.github.jaswantk917.tring.recorder"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 6
-        versionName = "1.5"
+        versionCode = 7
+        versionName = "1.6"
     }
 
     val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull

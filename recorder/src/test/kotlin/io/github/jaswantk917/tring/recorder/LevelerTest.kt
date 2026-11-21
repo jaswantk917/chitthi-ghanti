@@ -39,4 +39,25 @@ class LevelerTest {
 
     @Test
     fun `the gain is capped`() = assertTrue(peakAfter(0.004f) <= 0.004f * Leveler.MAX_GAIN * 1.05f)
+
+    @Test
+    fun `a pause after a faint voice isn't lifted with its hiss`() {
+        val leveler = Leveler(rate)
+        repeat(rate) { leveler.process(0.02f * sin(2 * PI * 300 * it / rate).toFloat()) }
+        var peak = 0f
+        for (i in 0 until 2 * rate) {
+            val out = leveler.process(0.001f * sin(2 * PI * 3_000 * i / rate).toFloat(), speech = false)
+            if (i > 3 * rate / 2) peak = maxOf(peak, abs(out))
+        }
+        assertTrue("hiss came out at $peak", peak < 0.0015f)
+    }
+
+    @Test
+    fun `the gaps between words keep the gain`() {
+        val leveler = Leveler(rate)
+        repeat(rate) { leveler.process(0.02f * sin(2 * PI * 300 * it / rate).toFloat()) }
+        repeat(rate / 10) { leveler.process(0f, speech = false) }
+        val out = (0 until rate / 50).maxOf { abs(leveler.process(0.02f * sin(2 * PI * 300 * it / rate).toFloat())) }
+        assertTrue("first word back at $out", out > 0.15f)
+    }
 }
