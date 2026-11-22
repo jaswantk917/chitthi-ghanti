@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.os.BatteryManager
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
@@ -38,9 +39,19 @@ class Processor(
     private val transcriber: Transcriber,
     private val summarizer: Summarizer,
     private val scope: CoroutineScope,
-    /** whether the phone is charging with its screen off: put down, so Whisper can run */
+    /** whether Whisper may run by itself now: the phone on the charger with its screen off, or any time when [anytime] */
     val resting: StateFlow<Boolean>,
+    private val prefs: SharedPreferences? = null,
+    private val onAnytime: () -> Unit = {},
 ) {
+    /** Whisper runs whenever a call needs it, even while the phone is in use: for trying it out, as it slows the phone */
+    var anytime: Boolean
+        get() = prefs?.getBoolean(ANYTIME, false) ?: false
+        set(value) {
+            prefs?.edit()?.putBoolean(ANYTIME, value)?.apply()
+            onAnytime()
+        }
+
     sealed interface Work {
         data class Listening(val progress: Transcriber.Progress, val lines: List<Line>) : Work
         data object Summarizing : Work
@@ -238,10 +249,21 @@ class Processor(
         fun get(context: Context): Processor = shared ?: synchronized(this) {
             shared ?: context.applicationContext.let { app ->
                 val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+                val prefs = app.getSharedPreferences("whisper", Context.MODE_PRIVATE)
                 var plugged = pluggedIn(app)
                 var screenOn = app.getSystemService(PowerManager::class.java).isInteractive
-                val resting = MutableStateFlow(plugged && !screenOn)
-                Processor(Notes(app), Transcriber(app), Summarizer(), scope, resting).also { processor ->
+                fun free() = prefs.getBoolean(ANYTIME, false) || (plugged && !screenOn)
+                val resting = MutableStateFlow(free())
+                lateinit var processor: Processor
+                fun changed() {
+                    val now = free()
+                    if (now == resting.value) return
+                    resting.value = now
+                    if (!now) processor.woken()
+                    else scope.launch { processor.catchUp(withContext(Dispatchers.IO) { Recordings.list(app) }) }
+                }
+                processor = Processor(Notes(app), Transcriber(app), Summarizer(), scope, resting, prefs, ::changed)
+                processor.also {
                     // the recorder service keeps the process, and with it this, alive between calls
                     ContextCompat.registerReceiver(
                         app,
@@ -253,11 +275,7 @@ class Processor(
                                     Intent.ACTION_SCREEN_ON -> screenOn = true
                                     Intent.ACTION_SCREEN_OFF -> screenOn = false
                                 }
-                                val now = plugged && !screenOn
-                                if (now == resting.value) return
-                                resting.value = now
-                                if (!now) processor.woken()
-                                else scope.launch { processor.catchUp(withContext(Dispatchers.IO) { Recordings.list(app) }) }
+                                changed()
                             }
                         },
                         IntentFilter().apply {
@@ -274,6 +292,8 @@ class Processor(
 
         private fun pluggedIn(context: Context) =
             (context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+
+        private const val ANYTIME = "anytime"
 
         /** how many of the newest calls are caught up on by themselves */
         const val CATCH_UP = 10
