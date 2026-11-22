@@ -1,17 +1,29 @@
 package io.github.jaswantk917.tring.recorder
 
+import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.Message
+import android.os.Messenger
+import android.os.Process
 import android.util.Log
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
-/** whisper.cpp's C API (cpp/whisper_jni.cpp). One context at a time, never two calls at once. */
+/** whisper.cpp's C API (cpp/whisper_jni.cpp), used only in [WhisperService]'s process. One context at a time, never two calls at once. */
 internal object WhisperNative {
     // only arm64 builds carry it
     val isAvailable: Boolean by lazy {
@@ -28,16 +40,13 @@ internal object WhisperNative {
 
     external fun free(context: Long)
 
-    /** the [transcribe] running now returns soon, with null */
-    external fun stop()
-
     /** JSON {"words": [{"w", "s", "e", "p", "g"}]} with times in ms of [pcm], or null when stopped or failed */
     external fun transcribe(context: Long, pcm: FloatArray, vadModel: String, threads: Int): String?
 }
 
 /**
- * OpenAI's Whisper (large-v3-turbo, 5-bit) through whisper.cpp on the phone's GPU, with its own
- * speech detection skipping the silences. Far clearer than Shruti on real calls, but a 574 MB
+ * OpenAI's Whisper (large-v3-turbo, 5-bit) through whisper.cpp on the phone's GPU, in its own
+ * process ([WhisperService]), with its own speech detection skipping the silences. Far clearer than Shruti on real calls, but a 574 MB
  * download ([WhisperModel]) and about twice a call's length to run, so it runs while the phone
  * charges with its screen off.
  */
@@ -46,48 +55,99 @@ object Whisper {
     data class Word(val text: String, val startMs: Int, val endMs: Int, val probability: Float, val segment: Int)
 
     private const val TAG = "Whisper"
-    // the GPU does the heavy part; these run the speech detection and what the GPU can't
-    private const val THREADS = 4
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private val engine = Dispatchers.IO.limitedParallelism(1)
 
     val supported get() = WhisperNative.isAvailable
 
     fun ready(context: Context) = supported && WhisperModel.ready(context)
 
-    /** the model loaded for [block], let go after: it holds the best part of a gigabyte */
-    suspend fun <T> session(context: Context, block: suspend Session.() -> T): T = withContext(engine) {
-        val handle = WhisperNative.load(WhisperModel.file(context).path)
-        check(handle != 0L) { "Whisper's model couldn't be read" }
-        try {
-            Session(handle, WhisperModel.vad(context).path).block()
+    /** [WhisperService] started for [block] and ended after: the model holds the best part of a gigabyte */
+    suspend fun <T> session(context: Context, block: suspend Session.() -> T): T {
+        val session = Session(context.applicationContext)
+        return try {
+            session.connect()
+            session.block()
         } finally {
-            WhisperNative.free(handle)
+            session.end()
         }
     }
 
-    class Session internal constructor(private val handle: Long, private val vad: String) {
-        /** the words in 16 kHz mono [pcm] in [-1, 1] */
-        suspend fun transcribe(pcm: FloatArray): List<Word> = coroutineScope {
+    /** cancelling a [transcribe] ends Whisper's process there and then, wherever whisper.cpp has got to */
+    class Session internal constructor(private val context: Context) {
+        private val bound = AtomicBoolean(false)
+        private var service: Messenger? = null
+        private var connecting: CancellableContinuation<Unit>? = null
+        private var waiting: CancellableContinuation<String?>? = null
+
+        private val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+                service = Messenger(binder)
+                connecting?.takeIf { it.isActive }?.resume(Unit)
+                connecting = null
+            }
+
+            override fun onServiceDisconnected(name: ComponentName) = died()
+
+            override fun onBindingDied(name: ComponentName) = died()
+        }
+
+        private val replies = Messenger(Handler(Looper.getMainLooper()) { message ->
+            if (message.what == WhisperService.HEARD) {
+                waiting?.takeIf { it.isActive }?.resume(message.data.getString(WhisperService.JSON))
+                waiting = null
+            }
+            true
+        })
+
+        // it crashed or was killed by the system: the piece fails, the app carries on
+        private fun died() {
+            service = null
+            waiting?.takeIf { it.isActive }?.resumeWithException(IllegalStateException("Whisper stopped"))
+            waiting = null
+        }
+
+        internal suspend fun connect() = withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                connecting = continuation
+                bound.set(true)
+                context.bindService(Intent(context, WhisperService::class.java), connection, Context.BIND_AUTO_CREATE)
+                continuation.invokeOnCancellation { end() }
+            }
+        }
+
+        /** the words in [fromMs] to [toMs] of the decoded call in [pcm] (16 kHz mono, 16-bit) */
+        suspend fun transcribe(pcm: File, fromMs: Int, toMs: Int): List<Word> {
             val started = System.currentTimeMillis()
-            // whisper.cpp can't be interrupted, only asked to stop between steps: cancelling asks it
-            val watch = launch(Dispatchers.Default) {
-                try {
-                    awaitCancellation()
-                } finally {
-                    WhisperNative.stop()
+            val json = withContext(Dispatchers.Main) {
+                suspendCancellableCoroutine { continuation ->
+                    waiting = continuation
+                    val ask = Message.obtain(null, WhisperService.LISTEN).apply {
+                        data = Bundle().apply {
+                            putString(WhisperService.PCM, pcm.path)
+                            putInt(WhisperService.FROM, fromMs)
+                            putInt(WhisperService.TO, toMs)
+                        }
+                        replyTo = replies
+                    }
+                    try {
+                        service!!.send(ask)
+                    } catch (e: Exception) {
+                        continuation.resumeWithException(IllegalStateException("Whisper stopped"))
+                    }
+                    continuation.invokeOnCancellation { end() }
                 }
             }
-            val json = try {
-                WhisperNative.transcribe(handle, pcm, vad, THREADS)
-            } finally {
-                watch.cancel()
-            }
-            ensureActive()
             val words = parse(json ?: error("Whisper failed"))
-            Log.i(TAG, "${pcm.size / 16} ms of audio in ${System.currentTimeMillis() - started} ms, ${words.size} words")
-            words
+            Log.i(TAG, "${toMs - fromMs} ms of audio in ${System.currentTimeMillis() - started} ms, ${words.size} words")
+            return words
+        }
+
+        /** unbound first, so the system doesn't bring the service back, then its process ended */
+        internal fun end() {
+            if (!bound.getAndSet(false)) return
+            runCatching { context.unbindService(connection) }
+            context.getSystemService(ActivityManager::class.java).runningAppProcesses
+                ?.filter { it.processName == context.packageName + WhisperService.PROCESS }
+                ?.forEach { Process.killProcess(it.pid) }
         }
     }
 

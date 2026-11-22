@@ -44,12 +44,13 @@ class Processor(
     private val prefs: SharedPreferences? = null,
     private val onAnytime: () -> Unit = {},
 ) {
-    /** Whisper runs whenever a call needs it, even while the phone is in use: for trying it out, as it slows the phone */
+    /** Whisper runs whenever a call needs it, even while the phone is in use: for trying it out, as it slows the phone; off stops it */
     var anytime: Boolean
         get() = prefs?.getBoolean(ANYTIME, false) ?: false
         set(value) {
             prefs?.edit()?.putBoolean(ANYTIME, value)?.apply()
             onAnytime()
+            if (!value) cancelWhisper()
         }
 
     sealed interface Work {
@@ -133,6 +134,9 @@ class Processor(
      */
     fun stopWhisper() {
         anytime = false
+    }
+
+    private fun cancelWhisper() {
         val running = _work.value.filterValues { it is Work.Listening && it.whisper }.keys
         running.forEach { jobs[it]?.cancel() }
         if (running.isNotEmpty()) catching?.cancel()
@@ -305,7 +309,8 @@ class Processor(
         private fun pluggedIn(context: Context) =
             (context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
 
-        private const val ANYTIME = "anytime"
+        // "anytime" was 1.11's first key: dropped, so the update starts with it off
+        private const val ANYTIME = "run_any_time"
 
         /** how many of the newest calls are caught up on by themselves */
         const val CATCH_UP = 10

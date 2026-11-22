@@ -84,7 +84,7 @@ class Transcriber(private val context: Context) {
             pieces.forEachIndexed { i, (from, to) ->
                 currentCoroutineContext().ensureActive()
                 onProgress(Progress(i, pieces.size))
-                val heard = transcribe(read(pcm, from, to)).map { it.copy(startMs = it.startMs + from, endMs = it.endMs + from) }
+                val heard = transcribe(pcm, from, to).map { it.copy(startMs = it.startMs + from, endMs = it.endMs + from) }
                 Pieces.lines(Pieces.cutRepeats(heard), turns).forEach { line ->
                     lines += line
                     onLine(line)
@@ -170,17 +170,18 @@ class Transcriber(private val context: Context) {
         }
     }
 
-    private fun read(pcm: File, fromMs: Int, toMs: Int): FloatArray = RandomAccessFile(pcm, "r").use { source ->
-        val from = (fromMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
-        val to = (toMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
-        val bytes = ByteArray(((to - from).toInt()) and 1.inv())
-        source.seek(from)
-        source.readFully(bytes)
-        val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-        FloatArray(samples.remaining()) { samples.get(it) / 32_768f }
-    }
+    internal companion object {
+        /** [fromMs] to [toMs] of a decoded call as samples in [-1, 1] */
+        fun read(pcm: File, fromMs: Int, toMs: Int): FloatArray = RandomAccessFile(pcm, "r").use { source ->
+            val from = (fromMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
+            val to = (toMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
+            val bytes = ByteArray(((to - from).toInt()) and 1.inv())
+            source.seek(from)
+            source.readFully(bytes)
+            val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            FloatArray(samples.remaining()) { samples.get(it) / 32_768f }
+        }
 
-    private companion object {
         const val TAG = "Transcriber"
         const val BYTES_PER_MS = Mixdown.RATE * 2 / 1_000
         /** a recording without turns goes to Shruti in pieces this long, its own window */
