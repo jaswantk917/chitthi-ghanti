@@ -563,7 +563,7 @@ private fun RecordingDetail(
             Column(Modifier.animateContentSize()) {
                 if (Whisper.supported) WhisperCard(model, onDownload = { WhisperModel.download(context) }, onCancel = WhisperModel::cancel)
                 if (lines == null && work == null && whisper && !resting) WaitingForCharger(onNow = { processor.transcribe(recording) })
-                listening?.let { TranscribeProgress(it.progress) }
+                listening?.let { TranscribeProgress(it.progress, onStop = if (it.whisper) processor::stopWhisper else null) }
                 (work as? Processor.Work.Failed)?.let { Text(it.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
                 if (!supported) {
                     Text("Transcripts need a phone with a 64-bit ARM processor.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
@@ -816,15 +816,23 @@ private fun RedoWithWhisper(onRedo: () -> Unit) {
     }
 }
 
+/** [onStop]: Whisper is listening, and the phone is slow until it stops */
 @Composable
-private fun TranscribeProgress(progress: Transcriber.Progress) {
+private fun TranscribeProgress(progress: Transcriber.Progress, onStop: (() -> Unit)?) {
+    val haptics = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         if (progress.of == 0) LinearWavyProgressIndicator(Modifier.fillMaxWidth())
         else LinearWavyProgressIndicator(progress = { progress.done.toFloat() / progress.of }, modifier = Modifier.fillMaxWidth())
-        Text(
-            if (progress.of == 0) "Listening on this phone…" else "Listening on this phone · ${progress.done} of ${progress.of}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
-        )
+        Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val who = if (onStop != null) "Whisper is listening" else "Listening on this phone"
+            Text(
+                if (progress.of == 0) "$who…" else "$who · ${progress.done} of ${progress.of}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+            )
+            if (onStop != null) {
+                TextButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onStop() }) { Text("Stop") }
+            }
+        }
     }
 }
 

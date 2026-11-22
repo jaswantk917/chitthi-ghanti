@@ -53,7 +53,8 @@ class Processor(
         }
 
     sealed interface Work {
-        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>) : Work
+        /** [whisper]: Whisper is the one listening, which slows the phone and can be stopped */
+        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>, val whisper: Boolean = false) : Work
         data object Summarizing : Work
         data class Failed(val message: String) : Work
     }
@@ -126,6 +127,17 @@ class Processor(
         }
     }
 
+    /**
+     * Stopped by hand (the call screen or the note while it runs): Whisper lets go of the phone
+     * now, and "any time" goes off, so it waits for the charger again instead of starting over.
+     */
+    fun stopWhisper() {
+        anytime = false
+        val running = _work.value.filterValues { it is Work.Listening && it.whisper }.keys
+        running.forEach { jobs[it]?.cancel() }
+        if (running.isNotEmpty()) catching?.cancel()
+    }
+
     /** Whisper stops when the phone is unplugged or picked up, and starts the call over next time */
     fun woken() {
         if (transcriber.engine() == Transcriber.Engine.Whisper) catching?.cancel()
@@ -188,7 +200,7 @@ class Processor(
 
     /** true when the transcript was saved */
     private suspend fun listen(recording: Recording): Boolean {
-        set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList()))
+        set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList(), whisper = transcriber.engine() == Transcriber.Engine.Whisper))
         return try {
             val replaced = notes.madeBy(recording.id) != null
             val transcript = transcriber.transcribe(
