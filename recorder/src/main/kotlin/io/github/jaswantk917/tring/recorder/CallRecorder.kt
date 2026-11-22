@@ -13,7 +13,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -22,11 +21,6 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -52,13 +46,6 @@ class CallRecorder : AccessibilityService() {
     private val audio by lazy { getSystemService(AudioManager::class.java) }
     private val callEnded = AudioManager.OnModeChangedListener { mode -> if (mode == AudioManager.MODE_NORMAL) stop() }
 
-    private val watching = MainScope()
-
-    // the Stop on the note while Whisper works
-    private val stopWhisper = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) = Processor.get(context).stopWhisper()
-    }
-
     private val commands = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.getBooleanExtra(EXTRA_ON, false)) start(intent.getStringExtra(EXTRA_WHO).orEmpty()) else stop()
@@ -67,16 +54,6 @@ class CallRecorder : AccessibilityService() {
 
     override fun onServiceConnected() {
         Updates.schedule(this)
-        // starts listening for the charger, which Whisper's transcripts wait for
-        val processor = Processor.get(this)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(stopWhisper, IntentFilter(ACTION_STOP_WHISPER), RECEIVER_NOT_EXPORTED)
-        else registerReceiver(stopWhisper, IntentFilter(ACTION_STOP_WHISPER))
-        watching.launch {
-            processor.work
-                .map { all -> all.entries.firstOrNull { (it.value as? Processor.Work.Listening)?.whisper == true }?.let { it.key to (it.value as Processor.Work.Listening).progress } }
-                .distinctUntilChanged()
-                .collect { notifyWhisper(it) }
-        }
         val connected = System.currentTimeMillis()
         // whatever an earlier run left half done: recordings published or dropped, raw sound deleted
         thread(name = "recover") {
@@ -93,8 +70,6 @@ class CallRecorder : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        watching.cancel()
-        runCatching { unregisterReceiver(stopWhisper) }
         stop()
         runCatching { unregisterReceiver(commands) }
         super.onDestroy()
@@ -194,38 +169,6 @@ class CallRecorder : AccessibilityService() {
         )
     }
 
-    /** While Whisper writes a transcript, which slows the phone: how far it's got, and Stop */
-    private fun notifyWhisper(running: Pair<Long, Transcriber.Progress>?) {
-        val manager = getSystemService(NotificationManager::class.java)
-        if (running == null) {
-            manager.cancel(WHISPER_NOTE)
-            return
-        }
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-        manager.createNotificationChannel(NotificationChannel(WHISPER, "Whisper at work", NotificationManager.IMPORTANCE_LOW))
-        val (id, progress) = running
-        val stop = PendingIntent.getBroadcast(this, WHISPER_NOTE, Intent(ACTION_STOP_WHISPER).setPackage(packageName), PendingIntent.FLAG_IMMUTABLE)
-        val open = PendingIntent.getActivity(
-            this, WHISPER_NOTE,
-            Intent(this, RecordingsActivity::class.java).putExtra(RecordingsActivity.EXTRA_OPEN, id)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        manager.notify(
-            WHISPER_NOTE,
-            Notification.Builder(this, WHISPER)
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle("Whisper is writing a transcript")
-                .setContentText((if (progress.of == 0) "" else "${progress.done} of ${progress.of} · ") + "the phone may be slow until it's done")
-                .setProgress(progress.of, progress.done, progress.of == 0)
-                .setContentIntent(open)
-                .addAction(Notification.Action.Builder(null as Icon?, "Stop", stop).build())
-                .setOngoing(true)
-                .setOnlyAlertOnce(true)
-                .build(),
-        )
-    }
-
     private fun notifySaved(uri: Uri) {
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -291,9 +234,6 @@ class CallRecorder : AccessibilityService() {
         private const val CHANNEL = "saved"
         private const val SAVING_TIMEOUT_MS = 15 * 60_000L
         private const val SUMMARIES = "summaries"
-        private const val WHISPER = "whisper"
-        private const val WHISPER_NOTE = 4
-        private const val ACTION_STOP_WHISPER = "io.github.jaswantk917.tring.recorder.STOP_WHISPER"
         // the contract with Tring's Ghanti; Recorder.kt there holds the same strings
         const val ACTION_RECORD = "io.github.jaswantk917.tring.recorder.RECORD"
         const val ACTION_STATE = "io.github.jaswantk917.tring.RECORDING"

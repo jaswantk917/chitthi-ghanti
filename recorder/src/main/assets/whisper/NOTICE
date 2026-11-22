@@ -1,7 +1,0 @@
-ggml-silero-v5.1.2.bin: Silero VAD v5.1.2 (https://github.com/snakers4/silero-vad, MIT License,
-Copyright (c) 2020-present Silero Team), converted to ggml by whisper.cpp
-(https://github.com/ggml-org/whisper.cpp, MIT License, Copyright (c) 2023-2026 The ggml authors).
-
-Whisper's model, downloaded on first use: ggml-large-v3-turbo-q5_0.bin from
-https://huggingface.co/ggerganov/whisper.cpp, OpenAI's Whisper large-v3-turbo (MIT License,
-Copyright (c) 2022 OpenAI) in whisper.cpp's 5-bit format.

@@ -1,13 +1,6 @@
 package io.github.jaswantk917.tring.recorder
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.SharedPreferences
-import android.os.BatteryManager
-import android.os.PowerManager
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
@@ -25,37 +17,19 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Turns recordings into transcripts and summaries, one at a time (the speech models and Nano each
- * take one job at once). With Shruti each call is transcribed as soon as it ends. Whisper takes
- * about twice a call's length and chokes the phone while it runs, so it waits until the phone is
- * charging with its screen off, and stops when it's unplugged or picked up (a tap on a call still
- * runs it there and then).
- * Summaries are tried as soon as there's a transcript; what that misses is caught up on while the
- * app is open, since AICore usually only answers the app in front. One per process ([get]), so the
- * screens and the recorder service share the queue.
+ * Turns recordings into transcripts and summaries, one at a time (Shruti and Nano each take one
+ * job at once). Each call is transcribed as soon as it ends and its summary tried then too; what
+ * that misses is caught up on while the app is open, since AICore usually only answers the app in
+ * front. One per process ([get]), so the screens and the recorder service share the queue.
  */
 class Processor(
     private val notes: Notes,
     private val transcriber: Transcriber,
     private val summarizer: Summarizer,
     private val scope: CoroutineScope,
-    /** whether Whisper may run by itself now: the phone on the charger with its screen off, or any time when [anytime] */
-    val resting: StateFlow<Boolean>,
-    private val prefs: SharedPreferences? = null,
-    private val onAnytime: () -> Unit = {},
 ) {
-    /** Whisper runs whenever a call needs it, even while the phone is in use: for trying it out, as it slows the phone; off stops it */
-    var anytime: Boolean
-        get() = prefs?.getBoolean(ANYTIME, false) ?: false
-        set(value) {
-            prefs?.edit()?.putBoolean(ANYTIME, value)?.apply()
-            onAnytime()
-            if (!value) cancelWhisper()
-        }
-
     sealed interface Work {
-        /** [whisper]: Whisper is the one listening, which slows the phone and can be stopped */
-        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>, val whisper: Boolean = false) : Work
+        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>) : Work
         data object Summarizing : Work
         data class Failed(val message: String) : Work
     }
@@ -82,10 +56,6 @@ class Processor(
 
     /** right after a call is saved: its transcript, then a try at its summary; [done] gets the summary, null when there is none yet */
     fun afterCall(recording: Recording, done: (String?) -> Unit) {
-        if (!due(recording.id)) {
-            done(null)
-            return
-        }
         jobs[recording.id] = scope.launch {
             lock.withLock {
                 if (listen(recording)) summarize(recording.id, recording.who)
@@ -117,45 +87,14 @@ class Processor(
             for (recording in recordings.take(CATCH_UP)) {
                 val stop = lock.withLock {
                     if (_work.value[recording.id] != null) return@withLock false
-                    // the model is missing or failing: the next call would fail the same way
-                    if (due(recording.id) && !listen(recording)) return@withLock true
+                    // Shruti is missing or failing: the next call would fail the same way
+                    if (notes.transcript(recording.id) == null && !listen(recording)) return@withLock true
                     if (summarizing && notes.summary(recording.id) == null) summarizing = summarize(recording.id, recording.who)
                     false
                 }
                 if (stop) break
             }
             if (latelyBehind(recordings)) updateLately(recordings)
-        }
-    }
-
-    /**
-     * Stopped by hand (the call screen or the note while it runs): Whisper lets go of the phone
-     * now, and "any time" goes off, so it waits for the charger again instead of starting over.
-     */
-    fun stopWhisper() {
-        anytime = false
-    }
-
-    private fun cancelWhisper() {
-        val running = _work.value.filterValues { it is Work.Listening && it.whisper }.keys
-        running.forEach { jobs[it]?.cancel() }
-        if (running.isNotEmpty()) catching?.cancel()
-    }
-
-    /** Whisper stops when the phone is unplugged or picked up, and starts the call over next time */
-    fun woken() {
-        if (transcriber.engine() == Transcriber.Engine.Whisper) catching?.cancel()
-    }
-
-    /**
-     * Whether a call's transcript should be written now without being asked: when it has none, or
-     * only Shruti's once Whisper is in; and Whisper only while the phone rests on the charger.
-     */
-    fun due(id: Long): Boolean {
-        val made = notes.madeBy(id)
-        return when (transcriber.engine()) {
-            Transcriber.Engine.Shruti -> made == null
-            Transcriber.Engine.Whisper -> resting.value && made != Transcriber.Engine.Whisper
         }
     }
 
@@ -204,16 +143,14 @@ class Processor(
 
     /** true when the transcript was saved */
     private suspend fun listen(recording: Recording): Boolean {
-        set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList(), whisper = transcriber.engine() == Transcriber.Engine.Whisper))
+        set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList()))
         return try {
-            val replaced = notes.madeBy(recording.id) != null
-            val transcript = transcriber.transcribe(
+            val lines = transcriber.transcribe(
                 recording.uri, notes.turns(recording.id), listOf(recording.who).filter { name -> name.any { it.isLetter() } },
                 onProgress = { progress -> listening(recording.id) { it.copy(progress = progress) } },
                 onLine = { line -> listening(recording.id) { it.copy(lines = it.lines + line) } },
             )
-            notes.saveTranscript(recording.id, transcript.lines, transcript.engine)
-            if (replaced) notes.forgetSummary(recording.id)
+            notes.saveTranscript(recording.id, lines)
             _saved.update { it + 1 }
             set(recording.id, null)
             true
@@ -264,53 +201,9 @@ class Processor(
 
         fun get(context: Context): Processor = shared ?: synchronized(this) {
             shared ?: context.applicationContext.let { app ->
-                val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-                val prefs = app.getSharedPreferences("whisper", Context.MODE_PRIVATE)
-                var plugged = pluggedIn(app)
-                var screenOn = app.getSystemService(PowerManager::class.java).isInteractive
-                fun free() = prefs.getBoolean(ANYTIME, false) || (plugged && !screenOn)
-                val resting = MutableStateFlow(free())
-                lateinit var processor: Processor
-                fun changed() {
-                    val now = free()
-                    if (now == resting.value) return
-                    resting.value = now
-                    if (!now) processor.woken()
-                    else scope.launch { processor.catchUp(withContext(Dispatchers.IO) { Recordings.list(app) }) }
-                }
-                processor = Processor(Notes(app), Transcriber(app), Summarizer(), scope, resting, prefs, ::changed)
-                processor.also {
-                    // the recorder service keeps the process, and with it this, alive between calls
-                    ContextCompat.registerReceiver(
-                        app,
-                        object : BroadcastReceiver() {
-                            override fun onReceive(context: Context, intent: Intent) {
-                                when (intent.action) {
-                                    Intent.ACTION_POWER_CONNECTED -> plugged = true
-                                    Intent.ACTION_POWER_DISCONNECTED -> plugged = false
-                                    Intent.ACTION_SCREEN_ON -> screenOn = true
-                                    Intent.ACTION_SCREEN_OFF -> screenOn = false
-                                }
-                                changed()
-                            }
-                        },
-                        IntentFilter().apply {
-                            addAction(Intent.ACTION_POWER_CONNECTED)
-                            addAction(Intent.ACTION_POWER_DISCONNECTED)
-                            addAction(Intent.ACTION_SCREEN_ON)
-                            addAction(Intent.ACTION_SCREEN_OFF)
-                        },
-                        ContextCompat.RECEIVER_NOT_EXPORTED,
-                    )
-                }
+                Processor(Notes(app), Transcriber(app), Summarizer(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
             }.also { shared = it }
         }
-
-        private fun pluggedIn(context: Context) =
-            (context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
-
-        // "anytime" was 1.11's first key: dropped, so the update starts with it off
-        private const val ANYTIME = "run_any_time"
 
         /** how many of the newest calls are caught up on by themselves */
         const val CATCH_UP = 10

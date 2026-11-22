@@ -56,12 +56,6 @@
         </service>
 
         <!-- an Accessibility service is the only kind of app Android lets use the microphone during a call -->
-        <!-- its own process, so stopping Whisper is ending it: the GPU and the model's gigabyte come back at once -->
-        <service
-            android:name=".WhisperService"
-            android:exported="false"
-            android:process=":whisper" />
-
         <service
             android:name=".CallRecorder"
             android:exported="true"

@@ -2,7 +2,6 @@ package io.github.jaswantk917.tring.recorder
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -18,7 +17,6 @@ import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
 
 /** Three switches to flip once; reached from the recordings screen until they are all on. */
@@ -63,24 +61,6 @@ class SetupActivity : Activity() {
             })
         }
         if (mic && serviceOn()) steps.addView(text("All set. Recordings go to Recordings/Tring.", 18f, bold = true, top = 24))
-        if (WhisperModel.ready(this)) {
-            val processor = Processor.get(this)
-            steps.addView(text("Transcripts are written by Whisper, while the phone charges with its screen off. It takes ${WhisperModel.SIZE / 1_000_000} MB.", 14f, top = 24))
-            steps.addView(Switch(this).apply {
-                text = "Run Whisper any time, even while you use the phone. It slows the phone down while it works."
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                isChecked = processor.anytime
-                setPadding(0, dp(12), 0, dp(4))
-                setOnCheckedChangeListener { _, on -> processor.anytime = on }
-            })
-            steps.addView(button("Remove Whisper") {
-                AlertDialog.Builder(this)
-                    .setMessage("Remove Whisper? Transcripts go back to the built-in model, and getting Whisper again is another ${WhisperModel.SIZE / 1_000_000} MB download.")
-                    .setPositiveButton("Remove") { _, _ -> WhisperModel.delete(this); render() }
-                    .setNegativeButton("Keep", null)
-                    .show()
-            })
-        }
         // Play Protect blocks a downloaded app that asks for Accessibility (India and a few other countries),
         // so the guide has people pause its scanning to install; this is where they're reminded to undo it
         steps.addView(text("Paused Play Protect to install this? Turn it back on: Play Store → your picture → Play Protect → ⚙ → Scan apps with Play Protect.", 14f, top = 24))

@@ -4,8 +4,8 @@ import android.content.Context
 import java.io.File
 
 /**
- * One line of a transcript: who said it, when it starts (ms), the words, and how sure the model was
- * of them (0..1). [them] is null when the recording has no turns.
+ * One line of a transcript: who said it, when it starts (ms), the words, and how sure Shruti was of
+ * them (0..1). [them] is null when the recording has no turns.
  */
 data class Line(val them: Boolean?, val atMs: Int, val text: String, val confidence: Float = 1f) {
     /** heard too poorly to trust: on real calls these are mostly guesses */
@@ -30,7 +30,8 @@ class Notes(private val context: Context) {
     fun transcript(id: Long): List<Line>? {
         val file = File(dir, "$id.transcript")
         if (!file.exists()) return null
-        return file.readLines().filter { it.isNotEmpty() && !it.startsWith(MARK) }.map { row ->
+        // a "#" line is the model's name, which an early 1.11 wrote first
+        return file.readLines().filter { it.isNotEmpty() && !it.startsWith("#") }.map { row ->
             val parts = row.split('\t', limit = 4)
             // written before confidences were kept: made again, so short or unsure calls aren't summarised from guesses
             if (parts.size != 4) return null
@@ -39,17 +40,8 @@ class Notes(private val context: Context) {
         }
     }
 
-    /** which model wrote a call's transcript; null when it has none */
-    fun madeBy(id: Long): Transcriber.Engine? {
-        val file = File(dir, "$id.transcript")
-        if (!file.exists()) return null
-        // written before Whisper came in, and so by Shruti, has no mark
-        val mark = file.bufferedReader().use { it.readLine() }?.takeIf { it.startsWith(MARK) }?.removePrefix(MARK)
-        return Transcriber.Engine.entries.firstOrNull { it.name == mark } ?: Transcriber.Engine.Shruti
-    }
-
-    fun saveTranscript(id: Long, lines: List<Line>, engine: Transcriber.Engine) {
-        File(dir, "$id.transcript").writeText("$MARK${engine.name}\n" + lines.joinToString("\n") { line ->
+    fun saveTranscript(id: Long, lines: List<Line>) {
+        File(dir, "$id.transcript").writeText(lines.joinToString("\n") { line ->
             "${when (line.them) { true -> "T"; false -> "Y"; null -> "-" }}\t${line.atMs}\t${line.confidence}\t${line.text.replace('\n', ' ').replace('\t', ' ')}"
         })
     }
@@ -60,12 +52,6 @@ class Notes(private val context: Context) {
      */
     fun summary(id: Long): String? = File(dir, "$id.summary").takeIf { it.exists() }?.readText()
         ?.takeIf { it.startsWith(VERSION) }?.removePrefix(VERSION)
-
-    /** made from a transcript that has since been written again: due to be made again too */
-    fun forgetSummary(id: Long) {
-        File(dir, "$id.summary").delete()
-        RecordingsProvider.changed(context)
-    }
 
     fun saveSummary(id: Long, text: String) {
         File(dir, "$id.summary").writeText(VERSION + text)
@@ -87,7 +73,5 @@ class Notes(private val context: Context) {
     private companion object {
         /** bumped whenever the summary prompts change, so older summaries are made again */
         const val VERSION = "v2\n"
-        /** a transcript's first line: which model wrote it */
-        const val MARK = "#"
     }
 }

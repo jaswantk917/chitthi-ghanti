@@ -32,13 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
-import java.io.RandomAccessFile
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /** The recordings screens at 360 dp and text size 1.3, from saved notes; screenshots land in files/screens. */
 class RecordingsScreensTest {
@@ -66,7 +63,6 @@ class RecordingsScreensTest {
                 Line(true, 8_000, "ठीक है, और वो बिजली का बिल भी भर देना, आखिरी तारीख परसों है। ऑनलाइन हो जाता है ना?"),
                 Line(false, 15_000, "हाँ हो जाएगा, मैं आज रात ही कर दूँगा।"),
             ),
-            Transcriber.Engine.Whisper,
         )
         notes.saveSummary(900_001, "• Asha Didi expects you tomorrow by 6 pm; you'll bring sweets.\n• You promised to pay the electricity bill online tonight; it's due the day after tomorrow.")
         notes.saveSummary(900_004, "• Mummy asked about Diwali plans and reminded you to call Mama ji.")
@@ -86,20 +82,8 @@ class RecordingsScreensTest {
         }
     }
 
-    @After
-    fun noFakeWhisper() {
-        WhisperModel.file(rule.activity).delete()
-        WhisperModel.refresh(rule.activity)
-    }
-
-    /** Whisper "downloaded": an empty file of its size, so nothing ever runs it */
-    private fun fakeWhisper() {
-        RandomAccessFile(WhisperModel.file(rule.activity), "rw").use { it.setLength(WhisperModel.SIZE) }
-        WhisperModel.refresh(rule.activity)
-    }
-
-    private fun app(recordings: List<Recording>, setupDone: Boolean = true, update: Release? = null, opened: Long? = null, resting: Boolean = false) {
-        val processor = Processor(notes, Transcriber(rule.activity), Summarizer(), rule.activity.lifecycleScope, MutableStateFlow(resting))
+    private fun app(recordings: List<Recording>, setupDone: Boolean = true, update: Release? = null, opened: Long? = null) {
+        val processor = Processor(notes, Transcriber(rule.activity), Summarizer(), rule.activity.lifecycleScope)
         content {
             var open by mutableStateOf(opened)
             RecorderApp(
@@ -158,61 +142,6 @@ class RecordingsScreensTest {
         app(calls, opened = 900_003)
         rule.onNodeWithContentDescription("Back").assertIsDisplayed()
         snap("call-long-name")
-    }
-
-    @Test
-    fun whisperIsOfferedBesideTheTranscript() {
-        app(calls, opened = 900_003)
-        rule.onNode(hasScrollAction()).performScrollToIndex(4)
-        rule.onNodeWithText("Clearer transcripts").assertIsDisplayed()
-        notCut("Download")
-        snap("whisper-offer")
-    }
-
-    @Test
-    fun theWhisperDownloadAtEachStep() {
-        var state by mutableStateOf<WhisperModel.State>(WhisperModel.State.Downloading(234_000_000))
-        content { WhisperCard(state, onDownload = {}, onCancel = {}) }
-        rule.onNodeWithText("234 of 574 MB").assertIsDisplayed()
-        notCut("Cancel")
-        snap("whisper-downloading")
-        rule.runOnIdle { state = WhisperModel.State.Checking }
-        rule.onNodeWithText("Checking it arrived whole…").assertIsDisplayed()
-        snap("whisper-checking")
-        rule.runOnIdle { state = WhisperModel.State.Failed("The download stopped early. Try again to pick it up.") }
-        notCut("Try again")
-        snap("whisper-failed")
-        rule.runOnIdle { state = WhisperModel.State.Downloading(574_000_000) }
-        rule.mainClock.autoAdvance = false
-        rule.runOnIdle { state = WhisperModel.State.Ready }
-        rule.mainClock.advanceTimeBy(1_000)
-        rule.onNodeWithText("Whisper is in").assertIsDisplayed()
-        snap("whisper-arrived")
-        // says so for a moment, then folds away
-        rule.mainClock.advanceTimeBy(6_000)
-        rule.onNodeWithText("Whisper is in").assertDoesNotExist()
-    }
-
-    @Test
-    fun aCallWaitsForThePhoneToRestOnceWhisperIsIn() {
-        fakeWhisper()
-        app(calls, opened = 900_002)
-        rule.onNode(hasScrollAction()).performScrollToIndex(4)
-        rule.onNodeWithText("Whisper writes this while the phone charges with its screen off.").assertIsDisplayed()
-        rule.onNodeWithText("Clearer transcripts").assertDoesNotExist()
-        notCut("Now")
-        snap("whisper-waiting")
-    }
-
-    @Test
-    fun aTranscriptFromTheBuiltInModelCanBeRedone() {
-        fakeWhisper()
-        notes.saveTranscript(900_001, notes.transcript(900_001)!!, Transcriber.Engine.Shruti)
-        app(calls, opened = 900_001)
-        rule.onNode(hasScrollAction()).performScrollToIndex(3)
-        rule.onNodeWithText("Redo with Whisper").assertIsDisplayed()
-        notCut("Redo with Whisper")
-        snap("whisper-redo")
     }
 
     @Test

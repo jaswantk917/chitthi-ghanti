@@ -35,10 +35,6 @@ android {
     // mapped straight from the APK at run time; the 4-bit weights don't compress anyway
     androidResources { noCompress += "cact" }
 
-    // Whisper's library is mostly GPU shaders, which pack from 36 MB to 11: a smaller download for
-    // an extracted copy on install
-    packaging { jniLibs { useLegacyPackaging = true } }
-
     val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull
     signingConfigs {
         if (uploadKeystore != null) {
