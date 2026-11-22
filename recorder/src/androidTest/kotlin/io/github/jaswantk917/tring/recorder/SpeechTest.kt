@@ -12,7 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** A spoken Hindi sentence, saved where calls are saved, goes through Shruti on the phone. */
+/** A spoken Hindi sentence, saved where calls are saved, goes through the phone's speech model: Whisper when its model is in, else Shruti. */
 class SpeechTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var uri: Uri
@@ -47,7 +47,7 @@ class SpeechTest {
     fun turnsAreHeardAsWords() = runBlocking {
         val lines = withTimeout(600_000) {
             Transcriber(context).transcribe(uri, listOf(Turn(0, 5_600, true)), emptyList(), onProgress = { Log.i(TAG, "$it") }, onLine = {})
-        }
+        }.lines
         Log.i(TAG, "turns: $lines")
         assertTrue("heard: $lines", lines.size == 1 && lines[0].them == true && HEARD.any { it in lines[0].text })
     }
@@ -56,7 +56,7 @@ class SpeechTest {
     fun aRecordingWithoutTurnsIsHeardWhole() = runBlocking {
         val lines = withTimeout(600_000) {
             Transcriber(context).transcribe(uri, null, emptyList(), onProgress = {}, onLine = {})
-        }
+        }.lines
         Log.i(TAG, "whole: $lines")
         assertTrue("heard: $lines", lines.isNotEmpty() && lines.all { it.them == null } && HEARD.any { word -> lines.any { word in it.text } })
     }

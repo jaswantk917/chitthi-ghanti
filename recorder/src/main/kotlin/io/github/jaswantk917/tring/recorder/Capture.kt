@@ -36,10 +36,9 @@ import kotlin.concurrent.thread
  * recording can be traced and the processing replayed on it.
  */
 @SuppressLint("MissingPermission") // CallRecorder checks RECORD_AUDIO before starting
-class Capture(private val scratch: File, private val keep: File? = null, private val stats: File? = null) {
+class Capture(private val scratch: File, private val keep: File? = null, private val stats: File? = null, private var channels: Int = 1) {
     @Volatile private var running = true
     private lateinit var worker: Thread
-    private var channels = 1
 
     /** false when no microphone could be opened */
     fun start(): Boolean {
@@ -52,7 +51,8 @@ class Capture(private val scratch: File, private val keep: File? = null, private
     /** stops the microphones and writes the mixed call to [output], and who talked when to [turns]; false when nothing was recorded */
     fun finish(output: FileDescriptor, turns: File? = null, onStep: (Step) -> Unit = {}): Boolean {
         running = false
-        worker.join(5_000)
+        // never started: mixing down sound already in [scratch], as a device test does with a real call
+        if (::worker.isInitialized) worker.join(5_000)
         return try {
             if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns, onStep)
         } catch (e: Exception) {

@@ -54,6 +54,8 @@ class CallRecorder : AccessibilityService() {
 
     override fun onServiceConnected() {
         Updates.schedule(this)
+        // starts listening for the charger, which Whisper's transcripts wait for
+        Processor.get(this)
         val connected = System.currentTimeMillis()
         // whatever an earlier run left half done: recordings published or dropped, raw sound deleted
         thread(name = "recover") {

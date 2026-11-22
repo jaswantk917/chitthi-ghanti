@@ -46,10 +46,9 @@ class RecordingsProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, args: Array<out String>?) = 0
 
     companion object {
-        val LIST: Uri = Uri.parse("content://io.github.jaswantk917.tring.recorder.recordings/calls")
-
         /** Tring's Recents reads again */
-        fun changed(context: android.content.Context) = runCatching { context.contentResolver.notifyChange(LIST, null) }
+        fun changed(context: android.content.Context) =
+            runCatching { context.contentResolver.notifyChange(Uri.parse("content://${context.packageName}.recordings/calls"), null) }
 
         /** Tring's Play build and its debug build */
         private val TRING = setOf("io.github.jaswantk917.chitthighanti", "io.github.jaswantk917.chitthighanti.debug")

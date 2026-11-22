@@ -1,0 +1,12 @@
+#!/bin/sh
+# glslc that reports the shader features Mali GPUs lack as unsupported, so ggml compiles no shaders for them
+for a in "$@"; do
+  case "$a" in
+    *feature-tests/coopmat2.comp) echo "extension not supported: GL_NV_cooperative_matrix2" >&2; exit 1;;
+    *feature-tests/coopmat2_decode_vector.comp) echo "extension not supported: GL_NV_cooperative_matrix_decode_vector" >&2; exit 1;;
+    *feature-tests/bfloat16.comp) echo "extension not supported: GL_EXT_bfloat16" >&2; exit 1;;
+    *feature-tests/float_e2m1.comp) echo "extension not supported: GL_EXT_float_e2m1" >&2; exit 1;;
+    *feature-tests/float_e4m3.comp) echo "extension not supported: GL_EXT_float_e4m3" >&2; exit 1;;
+  esac
+done
+exec "${GLSLC:-glslc}" "$@"

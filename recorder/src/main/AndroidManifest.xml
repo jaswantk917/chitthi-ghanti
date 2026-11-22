@@ -72,7 +72,7 @@
         <!-- Tring's Recents lists and plays recordings through this; it checks the caller is Tring -->
         <provider
             android:name=".RecordingsProvider"
-            android:authorities="io.github.jaswantk917.tring.recorder.recordings"
+            android:authorities="${applicationId}.recordings"
             android:exported="true" />
     </application>
 </manifest>

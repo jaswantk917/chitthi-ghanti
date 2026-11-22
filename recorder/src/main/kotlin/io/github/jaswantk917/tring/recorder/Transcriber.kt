@@ -7,25 +7,37 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.DataInputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 
 /**
- * Words from a recording, on the phone, with Shruti. A call with turns is transcribed turn by
- * turn, so each line is already "You" or "Them"; an older one without turns goes in half-minute
- * pieces with no names.
+ * Words from a recording, on the phone: with Whisper once its model is in ([WhisperModel]), else
+ * with Shruti. Shruti goes turn by turn, so each line is already "You" or "Them"; Whisper goes in
+ * pieces of about a minute and a half ([Pieces]) and its words are put on whoever's turn they fall
+ * in. An older call without turns gets lines with no names.
  */
 class Transcriber(private val context: Context) {
     data class Progress(val done: Int, val of: Int)
 
-    class Unavailable : Exception("Shruti needs a 64-bit ARM phone")
+    enum class Engine { Shruti, Whisper }
 
-    val supported get() = Shruti.available
+    data class Transcript(val engine: Engine, val lines: List<Line>)
+
+    class Unavailable : Exception("Transcripts need a phone with a 64-bit ARM processor")
+
+    val supported get() = Shruti.available || Whisper.supported
+
+    /** what the next transcript is written with */
+    fun engine() = if (Whisper.ready(context)) Engine.Whisper else Engine.Shruti
 
     /** [names]: who the call was with, so Shruti spells them as saved */
     suspend fun transcribe(
@@ -34,24 +46,68 @@ class Transcriber(private val context: Context) {
         names: List<String>,
         onProgress: (Progress) -> Unit,
         onLine: (Line) -> Unit,
-    ): List<Line> = withContext(Dispatchers.IO) {
-        if (!supported) throw Unavailable()
+    ): Transcript = withContext(Dispatchers.IO) {
+        val engine = engine()
+        if (engine == Engine.Shruti && !Shruti.available) throw Unavailable()
         val pcm = decode(uri) ?: error("This recording can't be read")
         try {
-            val pieces = turns?.takeIf { it.isNotEmpty() }
-                ?: (0 until pcm.length().toInt() / BYTES_PER_MS step WINDOW_MS).map { Turn(it, it + WINDOW_MS, false) }
-            val named = !turns.isNullOrEmpty()
+            val lines = when (engine) {
+                Engine.Whisper -> whisper(pcm, turns, onProgress, onLine)
+                Engine.Shruti -> shruti(pcm, turns, names, onProgress, onLine)
+            }
+            Transcript(engine, lines)
+        } finally {
+            pcm.delete()
+        }
+    }
+
+    private suspend fun shruti(pcm: File, turns: List<Turn>?, names: List<String>, onProgress: (Progress) -> Unit, onLine: (Line) -> Unit): List<Line> {
+        val pieces = turns?.takeIf { it.isNotEmpty() }
+            ?: (0 until pcm.length().toInt() / BYTES_PER_MS step WINDOW_MS).map { Turn(it, it + WINDOW_MS, false) }
+        val named = !turns.isNullOrEmpty()
+        val lines = ArrayList<Line>()
+        pieces.forEachIndexed { i, piece ->
+            currentCoroutineContext().ensureActive()
+            onProgress(Progress(i, pieces.size))
+            val heard = Shruti.transcribe(context, read(pcm, piece.startMs, piece.endMs), names)
+            if (heard.text.isNotEmpty()) lines += Line(if (named) piece.them else null, piece.startMs, heard.text, heard.confidence).also(onLine)
+        }
+        onProgress(Progress(pieces.size, pieces.size))
+        return lines
+    }
+
+    private suspend fun whisper(pcm: File, turns: List<Turn>?, onProgress: (Progress) -> Unit, onLine: (Line) -> Unit): List<Line> {
+        val bounds = listOf(0) + Pieces.cuts(loudness(pcm)) + (pcm.length() / BYTES_PER_MS).toInt()
+        val pieces = bounds.zipWithNext()
+        return Whisper.session(context) {
             val lines = ArrayList<Line>()
-            pieces.forEachIndexed { i, piece ->
-                ensureActive()
+            pieces.forEachIndexed { i, (from, to) ->
+                currentCoroutineContext().ensureActive()
                 onProgress(Progress(i, pieces.size))
-                val heard = Shruti.transcribe(context, read(pcm, piece), names)
-                if (heard.text.isNotEmpty()) lines += Line(if (named) piece.them else null, piece.startMs, heard.text, heard.confidence).also(onLine)
+                val heard = transcribe(read(pcm, from, to)).map { it.copy(startMs = it.startMs + from, endMs = it.endMs + from) }
+                Pieces.lines(Pieces.cutRepeats(heard), turns).forEach { line ->
+                    lines += line
+                    onLine(line)
+                }
             }
             onProgress(Progress(pieces.size, pieces.size))
             lines
-        } finally {
-            pcm.delete()
+        }
+    }
+
+    /** how loud each [Pieces.FRAME_MS] of the call is, for cutting it where it's quiet */
+    private fun loudness(pcm: File): FloatArray {
+        val frameBytes = Pieces.FRAME_MS * BYTES_PER_MS
+        val frames = (pcm.length() / frameBytes).toInt()
+        val bytes = ByteArray(frameBytes)
+        return DataInputStream(BufferedInputStream(pcm.inputStream(), 1 shl 16)).use { input ->
+            FloatArray(frames) {
+                input.readFully(bytes)
+                val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                var sum = 0L
+                while (samples.hasRemaining()) sum += abs(samples.get().toInt())
+                sum.toFloat() / (frameBytes / 2)
+            }
         }
     }
 
@@ -114,9 +170,9 @@ class Transcriber(private val context: Context) {
         }
     }
 
-    private fun read(pcm: File, piece: Turn): FloatArray = RandomAccessFile(pcm, "r").use { source ->
-        val from = (piece.startMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
-        val to = (piece.endMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
+    private fun read(pcm: File, fromMs: Int, toMs: Int): FloatArray = RandomAccessFile(pcm, "r").use { source ->
+        val from = (fromMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
+        val to = (toMs.toLong() * BYTES_PER_MS).coerceAtMost(source.length())
         val bytes = ByteArray(((to - from).toInt()) and 1.inv())
         source.seek(from)
         source.readFully(bytes)
@@ -127,7 +183,7 @@ class Transcriber(private val context: Context) {
     private companion object {
         const val TAG = "Transcriber"
         const val BYTES_PER_MS = Mixdown.RATE * 2 / 1_000
-        /** a recording without turns goes in pieces this long, Shruti's own window */
+        /** a recording without turns goes to Shruti in pieces this long, its own window */
         const val WINDOW_MS = 30_000
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -57,7 +58,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -97,6 +101,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -472,17 +477,23 @@ private fun RecordingDetail(
     val tick by processor.saved.collectAsState()
     val all by processor.work.collectAsState()
     val canSummarize by processor.canSummarize.collectAsState()
+    val resting by processor.resting.collectAsState()
+    val model by WhisperModel.state.collectAsState()
     val work = all[recording.id]
     val lines = remember(recording.id, tick) { notes.transcript(recording.id) }
     val summary = remember(recording.id, tick) { notes.summary(recording.id) }
+    val madeBy = remember(recording.id, tick) { notes.madeBy(recording.id) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val supported = Shruti.available
+    val supported = Shruti.available || Whisper.supported
+    val whisper = model == WhisperModel.State.Ready
     val playback = rememberPlayback(recording)
+    val context = LocalContext.current
 
     LaunchedEffect(recording.id) {
+        WhisperModel.refresh(context)
         when {
             work != null -> Unit
-            lines == null && supported -> processor.transcribe(recording)
+            lines == null && supported && processor.due(recording.id) -> processor.transcribe(recording)
             !lines.isNullOrEmpty() && summary == null -> processor.summarize(recording)
         }
     }
@@ -536,10 +547,22 @@ private fun RecordingDetail(
                     Text("Transcript", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     RegenerateButton(enabled = listening == null && supported, onClick = { processor.transcribe(recording) })
                 }
+                if (whisper && madeBy == Transcriber.Engine.Shruti && listening == null) {
+                    RedoWithWhisper(onRedo = { processor.transcribe(recording) })
+                }
+                if (shown.any { it.unsure }) {
+                    Text(
+                        "Faded lines were hard to make out, so their words may be wrong.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 8.dp, bottom = 4.dp),
+                    )
+                }
             }
         }
         item(key = "transcript-state") {
             Column(Modifier.animateContentSize()) {
+                if (Whisper.supported) WhisperCard(model, onDownload = { WhisperModel.download(context) }, onCancel = WhisperModel::cancel)
+                if (lines == null && work == null && whisper && !resting) WaitingForCharger(onNow = { processor.transcribe(recording) })
                 listening?.let { TranscribeProgress(it.progress) }
                 (work as? Processor.Work.Failed)?.let { Text(it.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
                 if (!supported) {
@@ -672,6 +695,127 @@ private fun Thinking(label: String, color: Color) {
     }
 }
 
+/**
+ * The offer of Whisper, beside the transcript it would write: what it costs, its download as it
+ * goes, and a moment of "it's in" once it lands here, after which it folds away.
+ */
+@Composable
+internal fun WhisperCard(state: WhisperModel.State, onDownload: () -> Unit, onCancel: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    // seen arriving on this screen: worth saying so before folding away
+    var arrived by remember { mutableStateOf(false) }
+    var wasDownloading by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        if (state is WhisperModel.State.Downloading || state == WhisperModel.State.Checking) wasDownloading = true
+        if (state == WhisperModel.State.Ready && wasDownloading) {
+            wasDownloading = false
+            arrived = true
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            delay(4_000)
+            arrived = false
+        }
+    }
+    AnimatedVisibility(
+        visible = state != WhisperModel.State.Ready || arrived,
+        enter = fadeIn() + expandVertically(),
+        exit = fadeOut() + shrinkVertically(),
+    ) {
+        val scheme = MaterialTheme.colorScheme
+        Surface(color = scheme.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Column(Modifier.padding(20.dp).animateContentSize()) {
+                val color = scheme.onTertiaryContainer
+                AnimatedContent(state, contentKey = { it::class }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "whisper") { now ->
+                    Column {
+                        when (now) {
+                            WhisperModel.State.Missing, is WhisperModel.State.Failed -> {
+                                Text("Clearer transcripts", style = MaterialTheme.typography.titleMedium, color = color)
+                                Text(
+                                    "Whisper makes out calls far better than the built-in model. It's a ${WhisperModel.SIZE / 1_000_000} MB download, and it writes transcripts while the phone charges with its screen off.",
+                                    style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 4.dp),
+                                )
+                                if (now is WhisperModel.State.Failed) {
+                                    Row(Modifier.padding(top = 8.dp)) {
+                                        Icon(Icons.Rounded.ErrorOutline, null, tint = color, modifier = Modifier.padding(top = 2.dp).size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(now.message, style = MaterialTheme.typography.bodyMedium, color = color)
+                                    }
+                                }
+                                Button(
+                                    onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onDownload() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = scheme.tertiary, contentColor = scheme.onTertiary),
+                                    modifier = Modifier.padding(top = 12.dp),
+                                ) { Text(if (now is WhisperModel.State.Failed) "Try again" else "Download") }
+                            }
+                            is WhisperModel.State.Downloading -> {
+                                val fraction by animateFloatAsState(now.done.toFloat() / WhisperModel.SIZE, label = "download")
+                                Text("Downloading Whisper", style = MaterialTheme.typography.titleMedium, color = color)
+                                LinearWavyProgressIndicator(
+                                    progress = { fraction }, color = color, trackColor = color.copy(alpha = 0.24f),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                )
+                                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${now.done / 1_000_000} of ${WhisperModel.SIZE / 1_000_000} MB",
+                                        style = MaterialTheme.typography.bodySmall, color = color, modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(
+                                        onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onCancel() },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = color),
+                                    ) { Text("Cancel") }
+                                }
+                            }
+                            WhisperModel.State.Checking -> {
+                                Text("Downloading Whisper", style = MaterialTheme.typography.titleMedium, color = color)
+                                LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp), color = color, trackColor = color.copy(alpha = 0.24f))
+                                Text("Checking it arrived whole…", style = MaterialTheme.typography.bodySmall, color = color, modifier = Modifier.padding(top = 8.dp))
+                            }
+                            WhisperModel.State.Ready -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.CheckCircle, null, tint = color, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Whisper is in", style = MaterialTheme.typography.titleMedium, color = color)
+                                }
+                                Text(
+                                    "From now on it writes transcripts while the phone charges with its screen off.",
+                                    style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** a call Whisper hasn't written up yet because the phone isn't resting on the charger, with the choice not to wait */
+@Composable
+private fun WaitingForCharger(onNow: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.BatteryChargingFull, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Whisper writes this while the phone charges with its screen off.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onNow() }) { Text("Now") }
+    }
+}
+
+/** a transcript Shruti wrote before Whisper came in */
+@Composable
+private fun RedoWithWhisper(onRedo: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Written by the built-in model.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onRedo() }) { Text("Redo with Whisper") }
+    }
+}
+
 @Composable
 private fun TranscribeProgress(progress: Transcriber.Progress) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -690,9 +834,10 @@ private fun Bubble(line: Line, modifier: Modifier = Modifier) {
     val mine = line.them == false
     val scheme = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-        if (line.them != null) {
+        if (line.them != null || line.unsure) {
+            val who = when (line.them) { false -> "You · "; true -> "Them · "; null -> "" }
             Text(
-                if (mine) "You · ${durationLabel(line.atMs.toLong())}" else "Them · ${durationLabel(line.atMs.toLong())}",
+                who + durationLabel(line.atMs.toLong()) + if (line.unsure) " · unclear" else "",
                 style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             )
@@ -700,7 +845,7 @@ private fun Bubble(line: Line, modifier: Modifier = Modifier) {
         Surface(
             color = if (mine) scheme.primaryContainer else scheme.surfaceContainerHigh,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (mine) 20.dp else 6.dp, bottomEnd = if (mine) 6.dp else 20.dp),
-            modifier = Modifier.widthIn(max = 300.dp),
+            modifier = Modifier.widthIn(max = 300.dp).alpha(if (line.unsure) 0.45f else 1f),
         ) {
             Text(
                 line.text, style = MaterialTheme.typography.bodyLarge,
