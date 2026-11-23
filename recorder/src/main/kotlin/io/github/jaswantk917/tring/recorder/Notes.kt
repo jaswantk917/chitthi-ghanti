@@ -23,6 +23,17 @@ data class Line(val them: Boolean?, val atMs: Int, val text: String, val confide
     }
 }
 
+/** One minute of the call, shown as a single paragraph. */
+data class Minute(val index: Int, val lines: List<Line>) {
+    val atMs get() = index * MS
+
+    companion object {
+        private const val MS = 60_000
+
+        fun of(lines: List<Line>) = lines.groupBy { it.atMs / MS }.map { (index, heard) -> Minute(index, heard) }
+    }
+}
+
 /**
  * What the recorder knows about each recording besides the sound: who talked when (written at the
  * end of the call), the transcript, and the summary. In the app's private files, keyed by the

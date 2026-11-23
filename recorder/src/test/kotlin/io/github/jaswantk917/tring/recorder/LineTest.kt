@@ -24,4 +24,21 @@ class LineTest {
 
     @Test
     fun `a row from before confidences is not read`() = assertNull(Line.read("T\t1000\tहलो"))
+
+    @Test
+    fun `lines of the same minute make one paragraph, in order`() {
+        val first = Line(null, 2_000, "हलो")
+        val second = Line(null, 59_999, "हाँ")
+        assertEquals(listOf(Minute(0, listOf(first, second))), Minute.of(listOf(first, second)))
+    }
+
+    @Test
+    fun `a new minute starts a new paragraph and a silent minute shows nothing`() {
+        val minutes = Minute.of(listOf(Line(null, 59_999, "a"), Line(null, 60_000, "b"), Line(null, 185_000, "c")))
+        assertEquals(listOf(0, 1, 3), minutes.map { it.index })
+        assertEquals(listOf(0, 60_000, 180_000), minutes.map { it.atMs })
+    }
+
+    @Test
+    fun `no lines make no paragraphs`() = assertEquals(emptyList<Minute>(), Minute.of(emptyList()))
 }

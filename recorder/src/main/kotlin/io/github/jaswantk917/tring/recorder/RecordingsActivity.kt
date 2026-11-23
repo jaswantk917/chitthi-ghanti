@@ -103,15 +103,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CancellationException
@@ -550,7 +552,7 @@ private fun RecordingDetail(
                 }
                 if (shown.any { it.unsure }) {
                     Text(
-                        "Faded lines were hard to make out, so their words may be wrong.",
+                        "Faded words were hard to make out, so they may be wrong.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(end = 8.dp, bottom = 4.dp),
                     )
@@ -574,7 +576,7 @@ private fun RecordingDetail(
                 }
             }
         }
-        items(shown.withIndex().toList(), key = { (i, _) -> "line-$i" }) { (_, line) -> SpokenLine(line, Modifier.animateItem()) }
+        items(Minute.of(shown), key = { "minute-${it.index}" }) { SpokenMinute(it, Modifier.animateItem()) }
     }
     }
 
@@ -850,16 +852,22 @@ private fun rememberOnMobileData(): Boolean {
     return metered
 }
 
-/** a line of the call, with nobody named */
+/** a minute of the call as one paragraph; only the words it was unsure of are faded */
 @Composable
-private fun SpokenLine(line: Line, modifier: Modifier = Modifier) {
+private fun SpokenMinute(minute: Minute, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Column(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).alpha(if (line.unsure) 0.45f else 1f)) {
-        Text(
-            durationLabel(line.atMs.toLong()) + if (line.unsure) " · unclear" else "",
-            style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant,
-        )
-        Text(line.text, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurface)
+    val faded = scheme.onSurface.copy(alpha = 0.45f)
+    val paragraph = remember(minute, faded) {
+        buildAnnotatedString {
+            minute.lines.forEachIndexed { i, line ->
+                if (i > 0) append(' ')
+                if (line.unsure) withStyle(SpanStyle(color = faded)) { append(line.text) } else append(line.text)
+            }
+        }
+    }
+    Column(modifier.fillMaxWidth().animateContentSize().padding(horizontal = 8.dp, vertical = 8.dp)) {
+        Text(durationLabel(minute.atMs.toLong()), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        Text(paragraph, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurface, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
