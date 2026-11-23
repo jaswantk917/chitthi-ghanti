@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- the clearer transcript runs in front, with its own note, for the phone's fast cores -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
 
     <!-- to tell Tring (or its debug build) whether a recording started -->
     <queries>
@@ -56,6 +60,19 @@
         </service>
 
         <!-- an Accessibility service is the only kind of app Android lets use the microphone during a call -->
+        <!-- ONNX Runtime's telemetry (device details and an id, uploaded): never, the recorder keeps everything on the phone -->
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            android:authorities="${applicationId}.onnxruntime_telemetry_initializer"
+            tools:node="remove" />
+
+        <!-- its own process, so stopping it is ending it, and a failure there can't take the recorder down -->
+        <service
+            android:name=".IndicService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing"
+            android:process=":indic" />
+
         <service
             android:name=".CallRecorder"
             android:exported="true"

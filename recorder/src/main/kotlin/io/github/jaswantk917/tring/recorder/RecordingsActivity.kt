@@ -6,6 +6,9 @@ import android.content.Context
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +26,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -43,12 +47,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,7 +61,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -476,11 +482,16 @@ private fun RecordingDetail(
     val work = all[recording.id]
     val lines = remember(recording.id, tick) { notes.transcript(recording.id) }
     val summary = remember(recording.id, tick) { notes.summary(recording.id) }
+    val clearer = remember(recording.id, tick) { notes.clearer(recording.id) }
+    val model by IndicModel.state.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
     val supported = Shruti.available
     val playback = rememberPlayback(recording)
+    val context = LocalContext.current
+    val fits = remember { IndicModel.runsHere(context) }
 
     LaunchedEffect(recording.id) {
+        IndicModel.refresh(context)
         when {
             work != null -> Unit
             lines == null && supported -> processor.transcribe(recording)
@@ -548,7 +559,13 @@ private fun RecordingDetail(
         }
         item(key = "transcript-state") {
             Column(Modifier.animateContentSize()) {
-                listening?.let { TranscribeProgress(it.progress) }
+                if (supported && fits) {
+                    ClearerCard(
+                        model, written = clearer, busy = work != null, onMobileData = rememberOnMobileData(),
+                        onDownload = { IndicModel.download(context) }, onCancel = IndicModel::cancel, onWrite = { processor.clearer(recording) },
+                    )
+                }
+                listening?.let { TranscribeProgress(it.progress, onStop = if (it.clearer) processor::stopClearer else null) }
                 (work as? Processor.Work.Failed)?.let { Text(it.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
                 if (!supported) {
                     Text("Transcripts need a phone with a 64-bit ARM processor.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
@@ -557,7 +574,7 @@ private fun RecordingDetail(
                 }
             }
         }
-        items(shown.withIndex().toList(), key = { (i, _) -> "line-$i" }) { (_, line) -> Bubble(line, Modifier.animateItem()) }
+        items(shown.withIndex().toList(), key = { (i, _) -> "line-$i" }) { (_, line) -> SpokenLine(line, Modifier.animateItem()) }
     }
     }
 
@@ -680,43 +697,169 @@ private fun Thinking(label: String, color: Color) {
     }
 }
 
+/** [onStop]: the clearer model is the one listening, in its own process, and can be stopped */
 @Composable
-private fun TranscribeProgress(progress: Transcriber.Progress) {
+private fun TranscribeProgress(progress: Transcriber.Progress, onStop: (() -> Unit)?) {
+    val haptics = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        val fraction by animateFloatAsState(if (progress.of == 0) 0f else progress.done.toFloat() / progress.of, label = "listening")
         if (progress.of == 0) LinearWavyProgressIndicator(Modifier.fillMaxWidth())
-        else LinearWavyProgressIndicator(progress = { progress.done.toFloat() / progress.of }, modifier = Modifier.fillMaxWidth())
-        Text(
-            if (progress.of == 0) "Listening on this phone…" else "Listening on this phone · ${progress.done} of ${progress.of}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
-        )
+        else LinearWavyProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.padding(top = 4.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            val who = if (onStop != null) "Writing a clearer transcript" else "Listening on this phone"
+            Text(
+                if (progress.of == 0) "$who…" else "$who · ${progress.done} of ${progress.of}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+            )
+            if (onStop != null) {
+                TextButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onStop() }) { Text("Stop") }
+            }
+        }
     }
 }
 
-/** a line as a chat bubble: yours on the right, theirs on the left */
+/**
+ * The clearer transcript, offered beside the built-in one: the model's download while it isn't in,
+ * then a button to write this call again with it, and once it has, a quiet line saying so.
+ */
 @Composable
-private fun Bubble(line: Line, modifier: Modifier = Modifier) {
-    val mine = line.them == false
+internal fun ClearerCard(
+    state: IndicModel.State,
+    written: Boolean,
+    busy: Boolean,
+    onMobileData: Boolean,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onWrite: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    var downloading by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        if (state is IndicModel.State.Downloading || state == IndicModel.State.Checking) downloading = true
+        // the one big moment here: a long download landed
+        if (state == IndicModel.State.Ready && downloading) {
+            downloading = false
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        }
+    }
     val scheme = MaterialTheme.colorScheme
-    Column(modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-        if (line.them != null || line.unsure) {
-            val who = when (line.them) { false -> "You · "; true -> "Them · "; null -> "" }
-            Text(
-                who + durationLabel(line.atMs.toLong()) + if (line.unsure) " · unclear" else "",
-                style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-            )
+    val stage = when {
+        state != IndicModel.State.Ready -> "model"
+        busy -> "busy"
+        written -> "written"
+        else -> "offer"
+    }
+    AnimatedContent(stage, transitionSpec = { (fadeIn() + expandVertically()) togetherWith (fadeOut() + shrinkVertically()) }, label = "clearer") { now ->
+        when (now) {
+            "busy" -> Spacer(Modifier.fillMaxWidth())
+            "written" -> Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.CheckCircle, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Written by the clearer model", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            }
+            else -> Surface(color = scheme.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                val color = scheme.onTertiaryContainer
+                Column(Modifier.padding(20.dp).animateContentSize()) {
+                    Text("Clearer transcript", style = MaterialTheme.typography.titleMedium, color = color)
+                    when (state) {
+                        IndicModel.State.Ready -> {
+                            Text(
+                                "Hear this call again with AI4Bharat's Hindi model, which makes out calls far better. It can take a few minutes, with a note and a Stop while it works.",
+                                style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 4.dp),
+                            )
+                            Button(
+                                onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onWrite() },
+                                colors = ButtonDefaults.buttonColors(containerColor = scheme.tertiary, contentColor = scheme.onTertiary),
+                                modifier = Modifier.padding(top = 12.dp),
+                            ) { Text("Write it") }
+                        }
+                        is IndicModel.State.Downloading -> {
+                            val fraction by animateFloatAsState(state.done.toFloat() / IndicModel.SIZE, label = "download")
+                            LinearWavyProgressIndicator(
+                                progress = { fraction }, color = color, trackColor = color.copy(alpha = 0.24f),
+                                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                            )
+                            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "${state.done / 1_000_000} of ${IndicModel.SIZE / 1_000_000} MB",
+                                    style = MaterialTheme.typography.bodySmall, color = color, modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onCancel() },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = color),
+                                ) { Text("Cancel") }
+                            }
+                        }
+                        IndicModel.State.Checking -> {
+                            LinearWavyProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp), color = color, trackColor = color.copy(alpha = 0.24f))
+                            Text("Checking it arrived whole, then unpacking…", style = MaterialTheme.typography.bodySmall, color = color, modifier = Modifier.padding(top = 8.dp))
+                        }
+                        IndicModel.State.Missing, is IndicModel.State.Failed -> {
+                            Text(
+                                "AI4Bharat's Hindi model makes out calls far better than the built-in one. It's a ${IndicModel.SIZE / 1_000_000} MB download, once, and needs ${"%.1f".format(2 * IndicModel.SIZE / 1e9)} GB free while it unpacks. After that it works offline, on the calls you choose.",
+                                style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 4.dp),
+                            )
+                            AnimatedVisibility(onMobileData) {
+                                Text(
+                                    "You're on mobile data, and this would use ${IndicModel.SIZE / 1_000_000} MB of it.",
+                                    style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                            if (state is IndicModel.State.Failed) {
+                                Row(Modifier.padding(top = 8.dp)) {
+                                    Icon(Icons.Rounded.ErrorOutline, null, tint = color, modifier = Modifier.padding(top = 2.dp).size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(state.message, style = MaterialTheme.typography.bodyMedium, color = color)
+                                }
+                            }
+                            Button(
+                                onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onDownload() },
+                                colors = ButtonDefaults.buttonColors(containerColor = scheme.tertiary, contentColor = scheme.onTertiary),
+                                modifier = Modifier.padding(top = 12.dp),
+                            ) {
+                                Text(
+                                    when {
+                                        onMobileData -> "Download anyway"
+                                        state is IndicModel.State.Failed -> "Try again"
+                                        else -> "Download"
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
-        Surface(
-            color = if (mine) scheme.primaryContainer else scheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = if (mine) 20.dp else 6.dp, bottomEnd = if (mine) 6.dp else 20.dp),
-            modifier = Modifier.widthIn(max = 300.dp).alpha(if (line.unsure) 0.45f else 1f),
-        ) {
-            Text(
-                line.text, style = MaterialTheme.typography.bodyLarge,
-                color = if (mine) scheme.onPrimaryContainer else scheme.onSurface,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+    }
+}
+
+/** follows the connection, so turning Wi-Fi on while the card is up changes what it says */
+@Composable
+private fun rememberOnMobileData(): Boolean {
+    val manager = LocalContext.current.getSystemService(ConnectivityManager::class.java)
+    var metered by remember { mutableStateOf(manager.isActiveNetworkMetered) }
+    DisposableEffect(manager) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                metered = !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            }
         }
+        manager.registerDefaultNetworkCallback(callback)
+        onDispose { manager.unregisterNetworkCallback(callback) }
+    }
+    return metered
+}
+
+/** a line of the call, with nobody named */
+@Composable
+private fun SpokenLine(line: Line, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Column(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).alpha(if (line.unsure) 0.45f else 1f)) {
+        Text(
+            durationLabel(line.atMs.toLong()) + if (line.unsure) " · unclear" else "",
+            style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant,
+        )
+        Text(line.text, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurface)
     }
 }
 

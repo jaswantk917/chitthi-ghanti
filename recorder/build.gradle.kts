@@ -35,6 +35,10 @@ android {
     // mapped straight from the APK at run time; the 4-bit weights don't compress anyway
     androidResources { noCompress += "cact" }
 
+    // ONNX Runtime's library is 34 MB stored as is and about a third of that packed: a smaller
+    // download, for a copy unpacked on install
+    packaging { jniLibs { useLegacyPackaging = true } }
+
     val uploadKeystore = providers.gradleProperty("CG_UPLOAD_KEYSTORE").orNull
     signingConfigs {
         if (uploadKeystore != null) {
@@ -96,6 +100,8 @@ dependencies {
     testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
+    // IndicConformer, for clearer transcripts
+    implementation(libs.onnxruntime.android)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)

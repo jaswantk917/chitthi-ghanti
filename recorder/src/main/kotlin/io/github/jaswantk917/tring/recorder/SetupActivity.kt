@@ -2,6 +2,7 @@ package io.github.jaswantk917.tring.recorder
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -61,6 +62,16 @@ class SetupActivity : Activity() {
             })
         }
         if (mic && serviceOn()) steps.addView(text("All set. Recordings go to Recordings/Tring.", 18f, bold = true, top = 24))
+        if (IndicModel.ready(this)) {
+            steps.addView(text("The clearer model for transcripts is in. It takes ${IndicModel.SIZE / 1_000_000} MB.", 14f, top = 24))
+            steps.addView(button("Remove the clearer model") {
+                AlertDialog.Builder(this)
+                    .setMessage("Remove the clearer model? Transcripts it wrote stay. Getting it again is another ${IndicModel.SIZE / 1_000_000} MB download.")
+                    .setPositiveButton("Remove") { _, _ -> IndicModel.delete(this); render() }
+                    .setNegativeButton("Keep", null)
+                    .show()
+            })
+        }
         // Play Protect blocks a downloaded app that asks for Accessibility (India and a few other countries),
         // so the guide has people pause its scanning to install; this is where they're reminded to undo it
         steps.addView(text("Paused Play Protect to install this? Turn it back on: Play Store → your picture → Play Protect → ⚙ → Scan apps with Play Protect.", 14f, top = 24))

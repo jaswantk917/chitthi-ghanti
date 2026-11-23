@@ -1,6 +1,8 @@
 package io.github.jaswantk917.tring.recorder
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,4 +15,13 @@ class LineTest {
 
     @Test
     fun `an old line without a confidence is kept plain`() = assertFalse(Line(null, 0, "hello").unsure)
+
+    @Test
+    fun `a saved line reads with nobody named, whatever side was guessed`() {
+        assertEquals(Line(null, 1_000, "हलो", 0.9f), Line.read("T\t1000\t0.9\tहलो"))
+        assertEquals(Line(null, 2_000, "हाँ", 0.8f), Line.read("Y\t2000\t0.8\tहाँ"))
+    }
+
+    @Test
+    fun `a row from before confidences is not read`() = assertNull(Line.read("T\t1000\tहलो"))
 }

@@ -27,9 +27,12 @@ class Processor(
     private val transcriber: Transcriber,
     private val summarizer: Summarizer,
     private val scope: CoroutineScope,
+    /** for the clearer transcript's own process; none in screen tests */
+    private val app: Context? = null,
 ) {
     sealed interface Work {
-        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>) : Work
+        /** [clearer]: IndicConformer listening in its own process, which can be stopped */
+        data class Listening(val progress: Transcriber.Progress, val lines: List<Line>, val clearer: Boolean = false) : Work
         data object Summarizing : Work
         data class Failed(val message: String) : Work
     }
@@ -37,6 +40,7 @@ class Processor(
     private val lock = Mutex()
     private val jobs = HashMap<Long, Job>()
     private var catching: Job? = null
+    private var clearing: IndicService.Run? = null
     private var nano: Boolean? = null
 
     private val _work = MutableStateFlow<Map<Long, Work>>(emptyMap())
@@ -71,6 +75,40 @@ class Processor(
                 if (listen(recording)) summarize(recording.id, recording.who)
             }
         }
+    }
+
+    /**
+     * The clearer transcript of [recording], only when asked for: IndicConformer in its own process
+     * beside the queue, replacing the built-in model's transcript and then its summary.
+     */
+    fun clearer(recording: Recording) {
+        val context = app ?: return
+        if (_work.value[recording.id] != null || clearing != null) return
+        set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList(), clearer = true))
+        clearing = IndicService.Run(
+            context, recording,
+            onProgress = { progress -> listening(recording.id) { it.copy(progress = progress) } },
+            onLine = { line -> listening(recording.id) { it.copy(lines = it.lines + line) } },
+            onFinished = {
+                clearing = null
+                set(recording.id, null)
+                notes.forgetSummary(recording.id)
+                _saved.update { it + 1 }
+                summarize(recording)
+            },
+            onFailed = { message ->
+                clearing = null
+                set(recording.id, Work.Failed("Couldn't write the clearer transcript ($message)."))
+            },
+            onStopped = {
+                clearing = null
+                set(recording.id, null)
+            },
+        ).also { it.start() }
+    }
+
+    fun stopClearer() {
+        clearing?.stop()
     }
 
     fun summarize(recording: Recording) {
@@ -201,7 +239,7 @@ class Processor(
 
         fun get(context: Context): Processor = shared ?: synchronized(this) {
             shared ?: context.applicationContext.let { app ->
-                Processor(Notes(app), Transcriber(app), Summarizer(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate))
+                Processor(Notes(app), Transcriber(app), Summarizer(), CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), app)
             }.also { shared = it }
         }
 

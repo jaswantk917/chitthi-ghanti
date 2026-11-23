@@ -4,8 +4,8 @@ import android.content.Context
 import java.io.File
 
 /**
- * One line of a transcript: who said it, when it starts (ms), the words, and how sure Shruti was of
- * them (0..1). [them] is null when the recording has no turns.
+ * One line of a transcript: when it starts (ms), the words, and how sure the model was of them
+ * (0..1). [them] stays null: telling the two voices apart was too often wrong (2026-11-23).
  */
 data class Line(val them: Boolean?, val atMs: Int, val text: String, val confidence: Float = 1f) {
     /** heard too poorly to trust: on real calls these are mostly guesses */
@@ -13,6 +13,13 @@ data class Line(val them: Boolean?, val atMs: Int, val text: String, val confide
 
     companion object {
         const val UNSURE = 0.5f
+
+        /** a saved row, its side ignored; null for one written before confidences were kept */
+        fun read(row: String): Line? {
+            val parts = row.split('\t', limit = 4)
+            if (parts.size != 4) return null
+            return Line(null, parts[1].toIntOrNull() ?: 0, parts[3], parts[2].toFloatOrNull() ?: 0f)
+        }
     }
 }
 
@@ -31,19 +38,22 @@ class Notes(private val context: Context) {
         val file = File(dir, "$id.transcript")
         if (!file.exists()) return null
         // a "#" line is the model's name, which an early 1.11 wrote first
-        return file.readLines().filter { it.isNotEmpty() && !it.startsWith("#") }.map { row ->
-            val parts = row.split('\t', limit = 4)
-            // written before confidences were kept: made again, so short or unsure calls aren't summarised from guesses
-            if (parts.size != 4) return null
-            val them = when (parts[0]) { "T" -> true; "Y" -> false; else -> null }
-            Line(them, parts[1].toIntOrNull() ?: 0, parts[3], parts[2].toFloatOrNull() ?: 0f)
-        }
+        // an old row makes the whole transcript due again, so short or unsure calls aren't summarised from guesses
+        return file.readLines().filter { it.isNotEmpty() && !it.startsWith("#") }.map { Line.read(it) ?: return null }
     }
 
-    fun saveTranscript(id: Long, lines: List<Line>) {
-        File(dir, "$id.transcript").writeText(lines.joinToString("\n") { line ->
+    /** [clearer]: written by IndicConformer, which the call screen then doesn't offer again */
+    fun saveTranscript(id: Long, lines: List<Line>, clearer: Boolean = false) {
+        File(dir, "$id.transcript").writeText((if (clearer) "$CLEARER\n" else "") + lines.joinToString("\n") { line ->
             "${when (line.them) { true -> "T"; false -> "Y"; null -> "-" }}\t${line.atMs}\t${line.confidence}\t${line.text.replace('\n', ' ').replace('\t', ' ')}"
         })
+    }
+
+    fun clearer(id: Long) = File(dir, "$id.transcript").takeIf { it.exists() }?.useLines { it.firstOrNull() } == CLEARER
+
+    /** made again from a transcript written anew */
+    fun forgetSummary(id: Long) {
+        File(dir, "$id.summary").delete()
     }
 
     /**
@@ -73,5 +83,7 @@ class Notes(private val context: Context) {
     private companion object {
         /** bumped whenever the summary prompts change, so older summaries are made again */
         const val VERSION = "v2\n"
+        // a "#" line, which the reader skips
+        const val CLEARER = "#Indic"
     }
 }

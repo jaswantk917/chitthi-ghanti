@@ -26,7 +26,7 @@ data class Release(val version: String, val notes: String, val apkUrl: String?, 
 
 /**
  * The recorder isn't on Play, so nothing updates it: once a day it asks GitHub for the newest
- * release, and says so once when there is one. This is the app's only use of the internet.
+ * release, and says so once when there is one.
  */
 object Updates {
     const val REPO = "https://github.com/jaswantk917/tring-recorder"

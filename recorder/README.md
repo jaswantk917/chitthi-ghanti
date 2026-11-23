@@ -6,7 +6,7 @@ Android lets only the phone's own system app record the call line. Any other app
 
 Once it's installed and switched on, Tring's call screen gets a **Record** button, and Tring's settings get **Record calls by themselves**: every call, strangers only, or the people you pick.
 
-Open the recorder to find your calls: play them, read what was said as a chat between *You* and *Them*, and see a few lines on what each call was about, plus **Lately**, what you've been talking about across your recent calls. All of it is made on the phone.
+Open the recorder to find your calls: play them, read what was said, and see a few lines on what each call was about, plus **Lately**, what you've been talking about across your recent calls. All of it is made on the phone.
 
 ## Set it up
 
@@ -33,14 +33,18 @@ To test it, call someone, tap **Record**, say a few words each, and hang up. A *
 - **Where recordings go:** `Recordings/Tring` on Android 12 and newer, `Music/Tring recordings` before that. Each one is named after the person and the time.
 - **How they sound:** the recorder hears the room, not the phone line. You come through clearly. The other person reaches the microphone from the earpiece or speaker, so after the call the recorder tells the two of you apart and brings them up to your loudness. On speaker they sound close to natural. On the earpiece they're quieter to begin with and come out thinner, like a phone voice.
 - **Your phone's own call recorder**, if it has one, records the line itself and will always sound better. Use this where there isn't one.
-- **Transcripts** come from [Shruti](#credits), a speech model for Hindi, English and Hinglish that runs inside the app, offline, on any phone with a 64-bit ARM processor (nearly every phone from the last several years). Each call is transcribed right after it ends (older ones when you open the app), and each line is marked *You* or *Them* from the recorder's own split of who was talking. Calls recorded before version 1.7 have no such split, so their lines aren't named.
+- **Transcripts** come from [Shruti](#credits), a speech model for Hindi, English and Hinglish that runs inside the app, offline, on any phone with a 64-bit ARM processor (nearly every phone from the last several years). Each call is transcribed right after it ends (older ones when you open the app). Lines aren't marked by who said them, because telling two voices apart from one microphone was too often wrong.
+- **Clearer transcripts** are optional and for Hindi calls. Open a call and tap **Download** once, then **Write it** on any call you choose. It uses [AI4Bharat's IndicConformer](#credits), which makes out calls far better than Shruti, and it runs offline with a note and a **Stop** while it works.
+  - The card only appears on phones that can run it: **4 GB of RAM or more** and a processor from roughly 2018 on (Cortex-A55 or newer).
+  - The download is **926 MB** and needs **1.9 GB free** while it unpacks; 926 MB stays on the phone until you remove it in the recorder's setup screen. On mobile data it tells you first. A download that gets cut off picks up where it stopped.
+  - It works the phone hard for a few minutes and takes over 1 GB of memory. It has only been tested on a Pixel 9, so expect slower on other phones. If the phone gets too warm or Android needs the memory back, it stops and tells you; your call and its first transcript are untouched.
 - **Summaries** use Gemini Nano, Google's on-device model, which only some phones have (Pixel 9 and newer, and a few others). Android lets it work only for the app on screen, so they're made while the recorder is open. Without Gemini Nano you get transcripts and no summaries. A call with only a few clear words gets none (*Too short to tell what it was about*) rather than a guess. Where a phone does let Gemini Nano work in the background, the summary arrives as a notification after the call, in its own *Call summaries* channel.
 - **In Tring:** each recording also shows up in Tring's Recents, under the call it was made during. Play it there, see its summary, or tap *Transcript* to open it here.
 - **For assistants:** on Android 16 and newer the recorder offers two [app functions](https://developer.android.com/ai/appfunctions), *list recent calls* and *what I've been talking about*, which read what is already saved. Google's Gemini calls app functions only from apps it has approved, and this one isn't, so for now they're for assistants that use the system's app-function command, or `adb shell cmd app_function`.
 
 ## Privacy
 
-- Its only use of the internet is asking GitHub once a day for the newest version number. Recordings, transcripts and summaries never leave your phone unless you share them.
+- It uses the internet for two things: asking GitHub once a day for the newest version number, and fetching the clearer-transcript model from this repository's releases if you tap **Download**. Recordings, transcripts and summaries never leave your phone unless you share them.
 - It can't read your screen. Its Accessibility service asks for no window content, only for being allowed the microphone during a call.
 - It records only when Tring asks it to: your tap, or the auto-record setting you chose.
 - Recording calls is legal in some places and needs everyone's consent in others. Know the rule where you are, and tell people when they're being recorded.
@@ -56,3 +60,5 @@ The code lives in [`recorder/`](https://github.com/jaswantk917/chitthi-ghanti/tr
 ## Credits
 
 Transcripts use **Shruti** by Udgam Labs, a version of [Cactus Whistle](https://huggingface.co/Cactus-Compute/whistle) retrained on Hindi, English and Hinglish speech, running in the [Cactus needle](https://huggingface.co/Cactus-Compute/needle3) engine. Both are under the Apache License 2.0; the full notice, with the training data's credits, ships in the app and is in [`recorder/src/main/assets/shruti/NOTICE`](https://github.com/jaswantk917/chitthi-ghanti/blob/main/recorder/src/main/assets/shruti/NOTICE).
+
+Clearer transcripts use [**IndicConformer**](https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual) by AI4Bharat (its Hindi parts, with the encoder quantized to 8 bits), running in [ONNX Runtime](https://github.com/microsoft/onnxruntime). Both are under the MIT License; the notice ships in the app and is in [`recorder/src/main/assets/indic/NOTICE`](https://github.com/jaswantk917/chitthi-ghanti/blob/main/recorder/src/main/assets/indic/NOTICE).
