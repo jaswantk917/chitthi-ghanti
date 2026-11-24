@@ -3,6 +3,7 @@ package io.github.jaswantk917.ghanti.incall
 import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
@@ -40,21 +41,36 @@ internal object RingThrough {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             runCatching { manager.matchesCallFilter(Uri.fromParts("tel", number, null)) }.getOrDefault(false)
         ) return false
+        play(context, call, alarm = true, vibrate = true)
+        return true
+    }
+
+    /** a call the recorder handed back as important, or never took: Telecom was told to stay quiet, so the ring is Tring's */
+    fun ringNow(context: Context, call: Call) {
+        if (ringing != null) return
+        val filter = context.getSystemService(NotificationManager::class.java).currentInterruptionFilter
+        val doNotDisturb = filter != NotificationManager.INTERRUPTION_FILTER_ALL && filter != NotificationManager.INTERRUPTION_FILTER_UNKNOWN
+        val silent = context.getSystemService(AudioManager::class.java).ringerMode == AudioManager.RINGER_MODE_SILENT
+        play(context, call, alarm = doNotDisturb, vibrate = doNotDisturb || !silent)
+    }
+
+    private fun play(context: Context, call: Call, alarm: Boolean, vibrate: Boolean) {
         ringing = call
-        val alarm = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+        val usage = if (alarm) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION_RINGTONE
+        val attributes = AudioAttributes.Builder().setUsage(usage).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         tone = RingtoneManager.getRingtone(context, RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_RINGTONE))?.apply {
-            audioAttributes = alarm
+            audioAttributes = attributes
             isLooping = true
             play()
         }
+        if (!vibrate) return
         val pattern = VibrationEffect.createWaveform(longArrayOf(0, 800, 600), 1)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            vibrator(context).vibrate(pattern, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
+            vibrator(context).vibrate(pattern, VibrationAttributes.createForUsage(if (alarm) VibrationAttributes.USAGE_ALARM else VibrationAttributes.USAGE_RINGTONE))
         } else {
             @Suppress("DEPRECATION")
-            vibrator(context).vibrate(pattern, alarm)
+            vibrator(context).vibrate(pattern, attributes)
         }
-        return true
     }
 
     /** answered, declined, hung up, or silenced with the power or volume key */

@@ -1,6 +1,8 @@
 package io.github.jaswantk917.ghanti.incall
 
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.telecom.Call
 import android.telecom.CallAudioState
@@ -13,12 +15,19 @@ class GhantiInCallService : InCallService() {
     private var proximity: PowerManager.WakeLock? = null
     /** calls auto-record has already looked at: once each, so stopping it by hand sticks through a hold */
     private val autoRecorded = HashSet<Call>()
+    private val handler = Handler(Looper.getMainLooper())
 
     private val callback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) {
-            if (state != Call.STATE_RINGING) RingThrough.stop(this@GhantiInCallService, call)
+            if (state == ScreenHandoff.AUDIO_PROCESSING) ScreenHandoff.entered(call)
+            if (state != Call.STATE_RINGING && state != ScreenHandoff.SIMULATED_RINGING) RingThrough.stop(this@GhantiInCallService, call)
             changed()
-            if (state == Call.STATE_ACTIVE) autoRecord(call)
+            // the recorder's screen stays up while it rings; Telecom was told to be quiet, so the sound is Tring's
+            if (state == ScreenHandoff.SIMULATED_RINGING) RingThrough.ringNow(this@GhantiInCallService, call)
+            if (state == Call.STATE_ACTIVE) {
+                if (ScreenHandoff.wasScreened(call)) showCall()
+                autoRecord(call)
+            }
         }
         override fun onDetailsChanged(call: Call, details: Call.Details) = changed()
         override fun onConferenceableCallsChanged(call: Call, conferenceableCalls: MutableList<Call>) = changed()
@@ -43,23 +52,33 @@ class GhantiInCallService : InCallService() {
 
     override fun onCallAdded(call: Call) {
         call.registerCallback(callback)
+        val handedOver = ScreenHandoff.claim(call)
+        if (handedOver) handler.postDelayed({ notTaken(call) }, ScreenHandoff.TAKE_MS)
         Calls.track(this, call)
         // before this call's own notification goes up: posting it records the caller, which would make
         // Do Not Disturb count this very call as a repeat
         @Suppress("DEPRECATION")
-        val ringingThrough = call.state == Call.STATE_RINGING && RingThrough.start(this, call)
+        val ringingThrough = !handedOver && call.state == Call.STATE_RINGING && RingThrough.start(this, call)
         changed()
         // an incoming call shows through its notification: full screen when locked, a banner when not;
         // one ringing through Do Not Disturb opens the screen itself, as Do Not Disturb hides its notification
         @Suppress("DEPRECATION")
-        if (call.state != Call.STATE_RINGING || ringingThrough) {
-            startActivity(Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        if (call.state != Call.STATE_RINGING || ringingThrough) showCall()
+    }
+
+    private fun showCall() = startActivity(Intent(this, InCallActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+
+    /** the recorder said it would take this call and didn't: it goes on as if it had never been offered */
+    private fun notTaken(call: Call) {
+        val shouldRing = ScreenHandoff.dropped(call) ?: return
+        changed()
+        if (shouldRing) RingThrough.ringNow(this, call)
     }
 
     override fun onCallRemoved(call: Call) {
         RingThrough.stop(this, call)
         call.unregisterCallback(callback)
+        ScreenHandoff.forget(call)
         autoRecorded.remove(call)
         Calls.untrack(call)
         changed()

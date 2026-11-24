@@ -30,6 +30,12 @@ class ClassifierTest {
         assertEquals("814946", v.otp)
     }
 
+    @Test fun `a code that expires is not a bill`() {
+        val v = sort("JM-KUBERB", "482913 is your OTP to log in to Kuber Bank. It expires in 5 minutes. Never share it with anyone.")
+        assertEquals(listOf(Tag.Otp("482913")), v.tags)
+        assertEquals(listOf(Tag.Otp("814946")), sort("BP-BIGBSK", "Bigbasket login code: 814946. Validity 10 minutes.").tags)
+    }
+
     @Test fun `awareness message without signals is an unsure promo`() {
         val v = sort("VK-KFINTK", "Vigilance Awareness Week is observed from 27 Oct to 2 Nov. Let us all pledge for integrity.")
         assertEquals(Category.Promotions, v.category)

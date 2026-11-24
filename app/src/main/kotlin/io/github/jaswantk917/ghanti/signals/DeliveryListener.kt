@@ -21,7 +21,7 @@ class DeliveryListener : NotificationListenerService() {
         if (sbn.packageName == packageName) return
         if (silent(sbn) && sbn.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) return
         val text = textOf(sbn.notification.extras).ifBlank { return }
-        val signal = DeliveryRules.fromNotification(sbn.packageName, labelOf(sbn.packageName), text, sbn.postTime) ?: return
+        val signal = DeliveryRules.fromNotification(sbn.packageName, labelOf(sbn.packageName), text, sbn.postTime, carriesMessage(sbn.notification)) ?: return
         GhantiApp.instance.signals.record(signal)
     }
 
@@ -30,6 +30,12 @@ class DeliveryListener : NotificationListenerService() {
         val ranking = Ranking()
         return currentRanking?.getRanking(sbn.key, ranking) == true && ranking.importance < NotificationManager.IMPORTANCE_DEFAULT
     }
+
+    // Slack, Teams, Gmail: someone's words, not the app's own news
+    private fun carriesMessage(n: Notification) =
+        n.category in setOf(Notification.CATEGORY_MESSAGE, Notification.CATEGORY_EMAIL, Notification.CATEGORY_SOCIAL) ||
+            n.extras.containsKey(Notification.EXTRA_MESSAGES) ||
+            n.extras.getString(Notification.EXTRA_TEMPLATE) == Notification.MessagingStyle::class.java.name
 
     private fun labelOf(pkg: String): String = try {
         packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()

@@ -13,7 +13,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -91,6 +93,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,6 +133,8 @@ import io.github.jaswantk917.ghanti.data.Contact
 import io.github.jaswantk917.ghanti.data.HomeState
 import io.github.jaswantk917.ghanti.data.Kind
 import io.github.jaswantk917.ghanti.data.RecentRow
+import io.github.jaswantk917.ghanti.data.Suggested
+import io.github.jaswantk917.ghanti.data.Suggestions
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.signals.Signal
 import io.github.jaswantk917.ghanti.signals.Strength
@@ -146,6 +151,8 @@ import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.util.sameDay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 interface HomeActions {
@@ -277,7 +284,7 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
             ) { page ->
                 val padding = PaddingValues(top = headerHeight + 4.dp, bottom = navBottom + 112.dp)
                 if (page == 0) {
-                    RecentsPage(state.recents, setup, recentsList, padding, actions)
+                    RecentsPage(state.recents, state.contacts, usual, setup, recentsList, padding, actions)
                 } else {
                     val searchDp = with(density) { searchHeight.toDp() }
                     ContactsPage(state.contacts, query, usual, contactsList, PaddingValues(top = headerHeight + searchDp - 8.dp, bottom = navBottom + 112.dp), actions, recording)
@@ -423,6 +430,8 @@ private fun StatusLine(setup: Setup, expecting: List<Signal>, onClick: () -> Uni
 @Composable
 private fun RecentsPage(
     recents: List<RecentRow>,
+    contacts: List<Contact>,
+    usual: Map<Long, String>,
     setup: Setup,
     list: androidx.compose.foundation.lazy.LazyListState,
     padding: PaddingValues,
@@ -431,6 +440,35 @@ private fun RecentsPage(
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var memoFor by remember { mutableStateOf<RecentRow?>(null) }
     val playback = rememberRecentsPlayback()
+    val haptics = rememberHaptics()
+    val density = LocalDensity.current
+    // the faces' height is fixed, so their place is held from the first frame and the list never jumps
+    val facesHeight = FACES_FIXED + with(density) { MaterialTheme.typography.labelLarge.lineHeight.toDp() }
+    val facesPx = with(density) { facesHeight.roundToPx() }
+    // rows under the bottom edge's fade can't be read; one behind the keypad button still shows its name
+    val unseenPx = with(density) { (WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp).roundToPx() }
+    // the rows Recents shows without scrolling, measured with the faces above them in place:
+    // nobody you can already see is offered again. Only taken at rest at the top, so the faces
+    // don't change under you as you scroll.
+    var shown by remember { mutableStateOf<Set<String>?>(null) }
+    val numberOf = remember(recents) { recents.associate { it.group.key to DeliveryRules.last10(it.group.number) } }
+    // read once per list: opening a row pushes others down, and the faces shouldn't change under your finger
+    LaunchedEffect(list, numberOf, facesPx, unseenPx) {
+        shown = snapshotFlow {
+            val info = list.layoutInfo
+            if (list.firstVisibleItemIndex != 0 || list.firstVisibleItemScrollOffset != 0 || info.visibleItemsInfo.isEmpty()) return@snapshotFlow null
+            val faces = info.visibleItemsInfo.firstOrNull { it.key == FACES_KEY }?.size ?: 0
+            val end = info.viewportEndOffset - unseenPx - (facesPx - faces).coerceAtLeast(0)
+            info.visibleItemsInfo.filter { it.offset + it.size / 2 < end }.mapNotNullTo(HashSet()) { item -> numberOf[item.key]?.takeIf { it.isNotEmpty() } }
+        }.filterNotNull().first()
+    }
+    val anyone = remember(contacts, recents, usual) { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis()).isNotEmpty() }
+    val suggested = remember(contacts, recents, usual, shown) {
+        shown?.let { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis(), it) }.orEmpty()
+    }
+    // the faces leaving still show who they were while they fade
+    var lastSuggested by remember { mutableStateOf(suggested) }
+    if (suggested.isNotEmpty()) lastSuggested = suggested
     // folding the row away stops its recording, rather than leaving sound with no button to stop it
     LaunchedEffect(open) {
         val playingIn = recents.firstOrNull { row -> row.recordings.values.any { it.id == playback.id } }?.group?.key
@@ -472,6 +510,23 @@ private fun RecentsPage(
         }
         if (recents.isEmpty()) {
             item(key = "empty") { Empty("No calls yet", Modifier.animateItem()) }
+        } else {
+            // always in the list, even empty: a row arriving above the first one would scroll it out of sight
+            item(key = FACES_KEY) {
+                // room is kept while it isn't yet known who's on screen; it only folds away when nobody's left to offer
+                AnimatedVisibility(if (shown == null) anyone else suggested.isNotEmpty(), enter = expandVertically(), exit = shrinkVertically() + fadeOut()) {
+                    Box(Modifier.fillMaxWidth().height(facesHeight)) {
+                        AnimatedVisibility(suggested.isNotEmpty(), enter = fadeIn() + scaleIn(initialScale = 0.92f), exit = fadeOut()) {
+                            AnimatedContent(lastSuggested, contentKey = { people -> people.map { it.number } }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "faces") { people ->
+                                Faces(people) { person ->
+                                    haptics.play(Haptic.Send)
+                                    actions.call(person.number)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         recents.forEachIndexed { i, row ->
             if (i == 0 || !sameDay(recents[i - 1].group.latest.date, row.group.latest.date)) {
@@ -503,6 +558,40 @@ private fun RecentsPage(
     }
 }
 
+private const val FACES_KEY = "faces"
+// the row's and each face's padding, the avatar and the gap under it; the name's line comes on top
+private val FACES_FIXED = 12.dp + 16.dp + 56.dp + 6.dp
+
+/** people you might call now, above Recents; a tap rings them */
+@Composable
+private fun Faces(people: List<Suggested>, modifier: Modifier = Modifier, onCall: (Suggested) -> Unit) {
+    Row(modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        people.forEach { person ->
+            key(person.number) {
+                val interaction = remember { MutableInteractionSource() }
+                Column(
+                    Modifier
+                        .width(104.dp)
+                        .pressScale(interaction, 0.92f)
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable(interactionSource = interaction, indication = null, onClickLabel = "Call") { onCall(person) }
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Avatar(person.name, person.photo, person.number, size = 56.dp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        person.name ?: person.number,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = if (person.name == null) TextOverflow.StartEllipsis else TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** what this stranger might have been: the guess at the time, and who they were before */
 private fun suggestionsFor(row: RecentRow) =
     (row.outcome?.guess?.brands.orEmpty().map(DeliveryRules::tagFor) + listOfNotNull(row.before)).distinct()
@@ -525,7 +614,7 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
     val label = row.label
     val hint = when {
         label != null -> null
-        guess != null -> guess.title
+        guess != null -> guess.brief
         row.before != null -> "${row.before} last time"
         else -> null
     }
@@ -588,14 +677,17 @@ private fun RecentItem(row: RecentRow, open: Boolean, onToggle: () -> Unit, onMe
                     val (icon, label) = kindOf(latest.kind, silenced)
                     Icon(icon, null, tint = if (missed) scheme.error else scheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(5.dp))
+                    // a long guess gives way, never the time
+                    val tint = if (hint != null) scheme.tertiary else scheme.onSurfaceVariant
                     Text(
-                        listOfNotNull(hint ?: label, clockTime(latest.date)).joinToString(" · "),
+                        hint ?: label,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (hint != null) scheme.tertiary else scheme.onSurfaceVariant,
+                        color = tint,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    Text(" · ${clockTime(latest.date)}", style = MaterialTheme.typography.bodyMedium, color = tint, maxLines = 1, softWrap = false)
                     if (hasNote) {
                         Spacer(Modifier.width(6.dp))
                         Icon(Icons.AutoMirrored.Rounded.Notes, "Has a note", tint = scheme.onSurfaceVariant, modifier = Modifier.size(15.dp))

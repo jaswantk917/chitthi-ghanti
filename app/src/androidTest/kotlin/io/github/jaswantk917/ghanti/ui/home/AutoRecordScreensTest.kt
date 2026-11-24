@@ -52,7 +52,13 @@ class AutoRecordScreensTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private fun content(body: @androidx.compose.runtime.Composable () -> Unit) {
-        rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
+        rule.runOnUiThread {
+            // the phone may lock mid-run; the test screen shows over it and keeps the screen on while it's up
+            rule.activity.setShowWhenLocked(true)
+            rule.activity.setTurnScreenOn(true)
+            rule.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            rule.activity.enableEdgeToEdge()
+        }
         rule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.3f)) {
@@ -96,7 +102,9 @@ class AutoRecordScreensTest {
         content { SettingsSheet(Settings(), Setup(true, true, true, false), onChange = {}, onMakeDefault = {}, onAllowNotifications = {}, onOpenBlocked = {}, onDismiss = {}, hasRecorder = false) }
         rule.onNodeWithText("Everything is decided", substring = true).performScrollTo().assertIsDisplayed()
         assertEquals(0, rule.onAllNodesWithText("record", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
-        assertEquals(0, rule.onAllNodesWithText("GitHub", substring = true).fetchSemanticsNodes().size)
+        // Tring's own source link stays; nothing points at the companion app
+        assertEquals(0, rule.onAllNodesWithText("Tring++", substring = true).fetchSemanticsNodes().size)
+        assertEquals(0, rule.onAllNodesWithText("companion", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
     }
 
     @Test

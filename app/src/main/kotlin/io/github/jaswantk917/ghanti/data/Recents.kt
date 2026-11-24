@@ -32,6 +32,24 @@ data class RecentGroup(val entries: List<CallEntry>) {
 object Recents {
     private const val TAG = "Recents"
 
+    /** whether this number is anywhere in the call log; true when that can't be told, so nobody is screened by mistake */
+    fun everCalled(context: Context, number: String): Boolean = try {
+        val last = DeliveryRules.last10(number)
+        last.length < 10 || context.contentResolver.query(
+            Calls.CONTENT_URI,
+            arrayOf(Calls._ID),
+            Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${Calls.NUMBER} LIKE ?")
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf("%$last"))
+                putInt(ContentResolver.QUERY_ARG_LIMIT, 1)
+            },
+            null,
+        )?.use { it.moveToFirst() } != false
+    } catch (e: Exception) {
+        Log.w(TAG, "couldn't read the call log", e)
+        true
+    }
+
     fun load(context: Context, limit: Int = 500): List<CallEntry> = try {
         context.contentResolver.query(
             Calls.CONTENT_URI,

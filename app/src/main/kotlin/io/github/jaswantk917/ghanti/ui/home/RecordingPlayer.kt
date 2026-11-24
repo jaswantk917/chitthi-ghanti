@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.jaswantk917.ghanti.data.CallRecording
 import io.github.jaswantk917.ghanti.data.CallRecordings
@@ -127,7 +129,7 @@ internal fun rememberRecentsPlayback(): RecentsPlayback {
     return playback
 }
 
-/** A recorded call under its line in Recents: play, scrub, what it was about, and its transcript in the recorder. */
+/** A recorded call under its line in Recents: play, scrub, and a few lines of its transcript, the rest in the recorder. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RecordingPlayer(recording: CallRecording, playback: RecentsPlayback, modifier: Modifier = Modifier) {
@@ -178,18 +180,53 @@ internal fun RecordingPlayer(recording: CallRecording, playback: RecentsPlayback
                 color = if (failed) scheme.error else scheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { haptics.play(Haptic.Tap); CallRecordings.open(context, recording.id) }) { Text("Transcript") }
+            if (recording.excerpt == null) {
+                TextButton(onClick = { haptics.play(Haptic.Tap); CallRecordings.open(context, recording.id) }) { Text("Transcript") }
+            }
         }
-        recording.summary?.let { summary ->
+        recording.excerpt?.let { excerpt ->
+            TranscriptPeek(excerpt, recording.more) {
+                haptics.play(Haptic.Tap)
+                CallRecordings.open(context, recording.id)
+            }
+        }
+    }
+}
+
+/** Up to four lines of what was said; anything longer opens whole in the recorder. */
+@Composable
+private fun TranscriptPeek(excerpt: String, more: Boolean, onOpen: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    var clipped by remember(excerpt) { mutableStateOf(false) }
+    val opens = more || clipped
+    Column(
+        Modifier
+            .padding(start = 4.dp, bottom = 6.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (opens) Modifier.clickable(onClickLabel = "Read the whole call", onClick = onOpen) else Modifier)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+    ) {
+        Text(
+            excerpt,
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurfaceVariant,
+            maxLines = PEEK_LINES,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { clipped = it.hasVisualOverflow },
+        )
+        if (opens) {
             Text(
-                summary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = scheme.onSurface,
-                modifier = Modifier.padding(start = 10.dp, end = 4.dp, bottom = 8.dp),
+                "Read the whole call",
+                style = MaterialTheme.typography.labelLarge,
+                color = scheme.primary,
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
 }
+
+private const val PEEK_LINES = 4
 
 private fun clock(ms: Int): String {
     val seconds = ms / 1_000

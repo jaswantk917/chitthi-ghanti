@@ -104,10 +104,11 @@ object CallNotifications {
                 Intent(context, InCallActivity::class.java).setAction(InCallActivity.ACTION_ANSWER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            builder.setChannelId(if (call.silenced) CH_QUIET else CH_RINGING)
+            // a handed-back call: Tring rings it itself and the recorder's screen is already up
+            builder.setChannelId(if (call.silenced || call.screened) CH_QUIET else CH_RINGING)
                 .setStyle(NotificationCompat.CallStyle.forIncomingCall(person, action(context, CallActionReceiver.DECLINE), answer))
                 .setContentText(call.outcome?.guess?.title ?: if (call.silenced) "Ringing silently · not in your contacts" else null)
-            if (!call.silenced) builder.setFullScreenIntent(open, true)
+            if (!call.silenced && !call.screened) builder.setFullScreenIntent(open, true)
         } else {
             builder.setStyle(NotificationCompat.CallStyle.forOngoingCall(person, action(context, CallActionReceiver.HANG_UP)))
                 .setContentText(

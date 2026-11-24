@@ -13,7 +13,7 @@ import io.github.jaswantk917.ghanti.screen.Outcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-enum class Phase { Ringing, Dialing, Active, Holding, ChooseSim, Ended }
+enum class Phase { Ringing, Dialing, Active, Holding, ChooseSim, Screening, Ended }
 
 /** One call as the screen needs it; rebuilt on every Telecom callback so Compose sees each change. */
 data class CallUi(
@@ -40,9 +40,11 @@ data class CallUi(
     val canDrop: Boolean = false,
     /** a number with a wait (;) stopped here: the tones still to send once you say so */
     val waitingTones: String? = null,
+    /** Tring Recorder answered it first and has handed it back */
+    val screened: Boolean = false,
 ) {
     val title: String get() = if (participants.isNotEmpty()) names(participants.map { it.title }) else person?.name ?: networkName ?: number.ifBlank { "Private number" }
-    val silenced get() = outcome?.rang == false
+    val silenced get() = outcome?.rang == false && !screened
 }
 
 internal fun names(all: List<String>) = when (all.size) {
@@ -116,7 +118,7 @@ object Calls {
                 val people = ui.call.children.mapNotNull { byCall[it] }.filter { it.phase != Phase.Ended }
                 if (people.isEmpty()) ui else ui.copy(isConference = true, participants = people).also { conferenceNames[ui.call] = it.title }
             }
-            .filter { it.phase != Phase.Ended }
+            .filter { it.phase != Phase.Ended && it.phase != Phase.Screening }
             // the call needing a decision first, then the live one
             .sortedBy { it.phase.ordinal }
         // the other side picked up
@@ -129,9 +131,10 @@ object Calls {
         ?: _calls.value.firstOrNull()
 
     fun answer(call: Call) = call.answer(VideoProfile.STATE_AUDIO_ONLY)
-    fun decline(call: Call) = call.reject(false, null)
+    // a handed-back call is already connected underneath, so it can only be hung up
+    fun decline(call: Call) = if (ScreenHandoff.wasScreened(call)) call.disconnect() else call.reject(false, null)
     /** Telecom hands the text to the SMS app to send */
-    fun declineWith(call: Call, text: String) = call.reject(true, text)
+    fun declineWith(call: Call, text: String) = if (ScreenHandoff.wasScreened(call)) call.disconnect() else call.reject(true, text)
     fun hangUp(call: Call) = call.disconnect()
     fun hold(call: Call, on: Boolean) = if (on) call.hold() else call.unhold()
     fun mute(on: Boolean) = service?.setMuted(on)
@@ -168,7 +171,9 @@ object Calls {
         @Suppress("DEPRECATION") // getState() replaces this from API 31 only
         val state = call.state
         val phase = when (state) {
-            Call.STATE_RINGING -> Phase.Ringing
+            Call.STATE_RINGING -> if (ScreenHandoff.isHeld(call)) Phase.Screening else Phase.Ringing
+            ScreenHandoff.AUDIO_PROCESSING -> Phase.Screening
+            ScreenHandoff.SIMULATED_RINGING -> Phase.Ringing
             Call.STATE_SELECT_PHONE_ACCOUNT -> Phase.ChooseSim
             Call.STATE_NEW, Call.STATE_CONNECTING, Call.STATE_DIALING, Call.STATE_PULLING_CALL -> Phase.Dialing
             Call.STATE_ACTIVE -> Phase.Active
@@ -194,6 +199,7 @@ object Calls {
             isConference = d.hasProperty(Call.Details.PROPERTY_CONFERENCE),
             sims = sims,
             waitingTones = waitingTones[call],
+            screened = ScreenHandoff.wasScreened(call),
         )
     }
 }

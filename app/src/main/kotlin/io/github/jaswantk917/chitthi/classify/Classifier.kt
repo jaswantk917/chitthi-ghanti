@@ -47,7 +47,8 @@ object Classifier {
             Otp.extract(body)?.let { add(Tag.Otp(it)) }
             Money.parse(body)?.let { add(if (it.debit) Tag.Debit(it.value) else Tag.Credit(it.value)) }
             if (alert.containsMatchIn(body) && none { it is Tag.Otp }) add(Tag.Alert)
-            if (bill.containsMatchIn(body) && none { it is Tag.Debit || it is Tag.Credit }) add(Tag.Bill)
+            // codes say when they expire too
+            if (bill.containsMatchIn(body) && none { it is Tag.Debit || it is Tag.Credit || it is Tag.Otp }) add(Tag.Bill)
             if (delivery.containsMatchIn(body)) add(Tag.Delivery)
             if (travel.containsMatchIn(body)) add(Tag.Travel)
         }

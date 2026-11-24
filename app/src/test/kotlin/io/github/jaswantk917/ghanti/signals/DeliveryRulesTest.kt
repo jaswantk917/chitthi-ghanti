@@ -30,6 +30,23 @@ class DeliveryRulesTest {
     }
 
     @Test
+    fun `a work chat saying someone is on the way is not a delivery`() {
+        assertNull(DeliveryRules.fromNotification("com.Slack", "Slack", "Ravi: I'm on the way to office, 10 mins", t(9), chat = true))
+        assertNull(DeliveryRules.fromNotification("com.google.android.gm", "Gmail", "Re: standup\nI have reached your floor", t(9), chat = true))
+    }
+
+    @Test
+    fun `a work chat naming a shop still counts as that shop`() {
+        assertEquals("Swiggy", DeliveryRules.fromNotification("com.Slack", "Slack", "Your Swiggy order is on the way", t(13), chat = true)?.brand)
+    }
+
+    @Test
+    fun `phrases count as whole words, not inside other words`() {
+        assertNull(DeliveryRules.fromNotification("com.Slack", "Slack", "Updated the auth provider and the override", t(9)))
+        assertNull(DeliveryRules.fromNotification("com.tools", "Toolbox", "The screwdriver is in the drawer", t(9)))
+    }
+
+    @Test
     fun `ordinary notifications are not signals`() {
         assertNull(DeliveryRules.fromNotification("com.whatsapp", "WhatsApp", "Bhai kal milte hain", t(13)))
         assertNull(DeliveryRules.fromNotification("com.licious", "Licious", "Let us handle the food. Chef crafted Snacks & Meals at your door in 30 mins, till 10 PM!", t(13)))
@@ -142,5 +159,13 @@ class DeliveryRulesTest {
     @Test
     fun `numbers are matched on their last ten digits`() {
         assertEquals(setOf("9876543210", "8123456789"), DeliveryRules.numbersIn("Call 098765 43210 or +91-8123456789, not 18002586161"))
+    }
+
+    @Test
+    fun `a Recents row says a guess briefly`() {
+        assertEquals("Bistro delivery?", Guess("Probably Bistro delivery").brief)
+        assertEquals("A delivery?", Guess("Probably a delivery").brief)
+        assertEquals("Uber driver?", Guess("Maybe Uber driver").brief)
+        assertEquals("Bistro delivery", Guess("Bistro delivery", confident = true).brief)
     }
 }

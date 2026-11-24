@@ -27,7 +27,14 @@ data class Guess(
     val ride: Boolean = false,
     /** the companies it could be, for "it was Ownly" */
     val brands: List<String> = emptyList(),
-)
+) {
+    /** short enough for a Recents row beside the time: "Bistro delivery?" for "Probably Bistro delivery" */
+    val brief: String get() = HEDGES.firstOrNull { title.startsWith(it) }?.let { title.removePrefix(it).replaceFirstChar(Char::uppercaseChar) + "?" } ?: title
+
+    private companion object {
+        val HEDGES = listOf("Probably ", "Maybe ")
+    }
+}
 
 data class ScreenSettings(
     val silenceUnknown: Boolean = true,
@@ -93,6 +100,13 @@ object DeliveryRules {
         "scheduled for today", "delivery is scheduled for today",
     )
 
+    // whole words only: "rider" is not in "provider", nor "driver is" in "screwdriver is"
+    private fun anyOf(phrases: List<String>) = Regex(phrases.joinToString("|") { """(?<![\p{L}\p{N}])${Regex.escape(it)}(?![\p{L}\p{N}])""" })
+    private val doneWords = anyOf(done)
+    private val liveWords = anyOf(live)
+    private val placedWords = anyOf(placed)
+    private val todayWords = anyOf(today)
+
     // "Arriving in 15 mins", "reaching in 10-12 minutes": the later end of a range
     private val eta = Regex("""\b(?:arriv|reach|deliver)\w*\s+in\s+(?:\d{1,3}\s*(?:-|–|to)\s*)?(\d{1,3})\s*min""")
 
@@ -103,7 +117,7 @@ object DeliveryRules {
     fun dueIn(text: String, at: Long): Long? {
         val t = text.lowercase()
         eta.find(t)?.let { return at + it.groupValues[1].toLong() * 60_000L }
-        return if (placed.any(t::contains)) at + PLACED_MS else null
+        return if (placedWords.containsMatchIn(t)) at + PLACED_MS else null
     }
 
     fun numbersIn(text: String): Set<String> = phone.findAll(text).map { it.groupValues[1] + it.groupValues[2] }.toSet()
@@ -111,9 +125,9 @@ object DeliveryRules {
     fun strengthOf(text: String): Strength? {
         val t = text.lowercase()
         return when {
-            done.any(t::contains) -> Strength.Done
-            live.any(t::contains) || placed.any(t::contains) -> Strength.Live
-            today.any(t::contains) -> Strength.Today
+            doneWords.containsMatchIn(t) -> Strength.Done
+            liveWords.containsMatchIn(t) || placedWords.containsMatchIn(t) -> Strength.Live
+            todayWords.containsMatchIn(t) -> Strength.Today
             else -> null
         }
     }
@@ -123,13 +137,18 @@ object DeliveryRules {
         return brands.firstOrNull { Regex("""\b${Regex.escape(it.lowercase())}\b""").containsMatchIn(t) }
     }
 
-    /** a notification; [appLabel] is what the launcher calls the app that posted it */
-    fun fromNotification(packageName: String, appLabel: String, text: String, at: Long): Signal? {
+    /**
+     * a notification; [appLabel] is what the launcher calls the app that posted it, and [chat] says it
+     * carries someone's message: a chat or an email
+     */
+    fun fromNotification(packageName: String, appLabel: String, text: String, at: Long, chat: Boolean = false): Signal? {
         val strength = strengthOf(text) ?: return null
-        val brand = if (packageName in messengers) {
-            brandIn(text) ?: DELIVERY
-        } else {
-            brandIn(appLabel) ?: brandIn(text) ?: appLabel
+        val brand = when {
+            // shops and riders write on WhatsApp and SMS without always saying who they are
+            packageName in messengers -> brandIn(text) ?: DELIVERY
+            // anywhere else, a colleague "on the way" is not an order: it counts only when it names a shop
+            chat -> brandIn(appLabel) ?: brandIn(text) ?: return null
+            else -> brandIn(appLabel) ?: brandIn(text) ?: appLabel
         }
         return Signal(brand, strength, at, numbersIn(text), dueIn(text, at))
     }

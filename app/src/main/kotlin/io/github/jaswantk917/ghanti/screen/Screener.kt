@@ -6,6 +6,9 @@ import io.github.jaswantk917.block.BlockRules
 import io.github.jaswantk917.chitthi.ChitthiApp
 import io.github.jaswantk917.ghanti.GhantiApp
 import io.github.jaswantk917.ghanti.data.Contacts
+import io.github.jaswantk917.ghanti.data.Recents
+import io.github.jaswantk917.ghanti.incall.Recorder
+import io.github.jaswantk917.ghanti.incall.ScreenHandoff
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 
 /**
@@ -36,6 +39,10 @@ class Screener : CallScreeningService() {
             settings = app.prefs.settings.value.screen,
         )
         if (!isContact) app.screenLog.add(Outcome(DeliveryRules.last10(number), now, decision.ring, decision.guess, decision.repeat))
-        respondToCall(details, CallResponse.Builder().setSilenceCall(!decision.ring).build())
+        if (!decision.ring && Recorder.installed(this)) ScreenHandoff.silenced(this, number)
+        // only a stranger with no history; the recorder may also say yes to the one call being tried out
+        val taken = number.isNotBlank() && Recorder.installed(this) &&
+            ScreenHandoff.offer(this, number, stranger = !isContact && !decision.ring && !Recents.everCalled(this, number), wouldRing = decision.ring)
+        respondToCall(details, CallResponse.Builder().setSilenceCall(!decision.ring || taken).build())
     }
 }

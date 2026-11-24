@@ -7,8 +7,16 @@ import android.net.Uri
 import android.util.Log
 import io.github.jaswantk917.ghanti.incall.Recorder
 
-/** A call Tring Recorder recorded: when it started, how long, and what it was about when it knows. */
-data class CallRecording(val id: Long, val at: Long, val durationMs: Long, val summary: String?)
+/** A call Tring Recorder recorded: when it started, how long, and a few lines of what was said. */
+data class CallRecording(
+    val id: Long,
+    val at: Long,
+    val durationMs: Long,
+    /** a few lines from the middle of the call */
+    val excerpt: String? = null,
+    /** the transcript goes on past [excerpt] */
+    val more: Boolean = false,
+)
 
 /** Recordings from Tring Recorder's provider, for Recents; nothing when the recorder isn't installed or is older than 1.9. */
 object CallRecordings {
@@ -21,8 +29,19 @@ object CallRecordings {
 
     fun load(context: Context): List<CallRecording> = try {
         context.contentResolver.query(LIST, null, null, null, null)?.use { c ->
+            // a recorder older than 1.12 has no excerpt columns
+            val excerpt = c.getColumnIndex("excerpt")
+            val more = c.getColumnIndex("excerpt_more")
             buildList {
-                while (c.moveToNext()) add(CallRecording(c.getLong(0), c.getLong(1), c.getLong(2), c.getString(3)))
+                while (c.moveToNext()) {
+                    add(
+                        CallRecording(
+                            c.getLong(0), c.getLong(1), c.getLong(2),
+                            excerpt = if (excerpt >= 0) c.getString(excerpt) else null,
+                            more = more >= 0 && c.getInt(more) == 1,
+                        ),
+                    )
+                }
             }
         }.orEmpty()
     } catch (e: Exception) {

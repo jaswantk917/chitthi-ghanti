@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <img src="docs/screens/chitthi.jpg" width="200" alt="Chitthi">&nbsp;
-  <img src="docs/screens/ghanti.jpg" width="200" alt="Ghanti">&nbsp;
-  <img src="docs/screens/recents.jpg" width="200" alt="Recents with a delivery on its way">&nbsp;
-  <img src="docs/screens/call.jpg" width="200" alt="A call from a delivery rider">
+  <img src="docs/screens/chitthi.jpg" width="200" alt="Chitthi: a bank code on top, bills, travel and payments tagged">&nbsp;
+  <img src="docs/screens/ghanti.jpg" width="200" alt="Ghanti: Recents with a delivery on its way">&nbsp;
+  <img src="docs/screens/call.jpg" width="200" alt="A call from a delivery rider">&nbsp;
+  <img src="docs/screens/recording.jpg" width="200" alt="A recorded call in Recents, with Tring++">
 </p>
 
 Two apps in one install, each with its own icon. Use one, or both.
@@ -38,7 +38,7 @@ Everything stays on your phone. No accounts, no ads, no tracking, no servers.
 
 ## Call recording
 
-Not on Play: Play doesn't allow call recorders that work the only way an app other than the phone's own can. Install [Tring Recorder](https://github.com/jaswantk917/tring-recorder) from GitHub and Ghanti gets a Record button on the call screen, plus calls that record by themselves: every call, strangers only, or the people you pick. The setup guide is there.
+Not on Play: Play doesn't allow call recorders that work the only way an app other than the phone's own can. Install [Tring++](https://github.com/jaswantk917/tring-recorder) from GitHub and Ghanti gets a Record button on the call screen, plus calls that record by themselves: every call, strangers only, or the people you pick. The setup guide is there.
 
 ## Blocking
 

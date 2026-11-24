@@ -7,7 +7,7 @@ import org.junit.Test
 class CallRecordingsTest {
     private val minute = 60_000L
     private fun call(id: Long, at: Long, seconds: Long, kind: Kind = Kind.Incoming) = CallEntry(id, "+919876543210", null, kind, at, seconds, false)
-    private fun recording(id: Long, at: Long) = CallRecording(id, at, 1_000, null)
+    private fun recording(id: Long, at: Long) = CallRecording(id, at, 1_000)
 
     @Test
     fun `a recording belongs to the call it started during`() {
