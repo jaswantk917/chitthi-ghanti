@@ -1,12 +1,29 @@
-<h1 align="center">Tring Recorder</h1>
+<h1 align="center">Tring++</h1>
 
 <p align="center">Call recording for <a href="https://play.google.com/store/apps/details?id=io.github.jaswantk917.chitthighanti">Tring</a>, as a small add-on you install yourself.</p>
 
-Android lets only the phone's own system app record the call line. Any other app has one way in: an Accessibility service may use the microphone during a call. Google Play doesn't allow call recorders built that way, so Tring Recorder lives here instead of on Play, and does only this one thing.
+Android lets only the phone's own system app record the call line. Any other app has one way in: an Accessibility service may use the microphone during a call. Google Play doesn't allow call recorders built that way, so Tring++ lives here instead of on Play, and does only this one thing.
 
 Once it's installed and switched on, Tring's call screen gets a **Record** button, and Tring's settings get **Record calls by themselves**: every call, strangers only, or the people you pick.
 
 Open the recorder to find your calls: play them, read what was said, and see a few lines on what each call was about, plus **Lately**, what you've been talking about across your recent calls. All of it is made on the phone.
+
+<p align="center">
+  <img src="docs/screens/calls.jpg" width="200" alt="Your calls, with Lately on top">&nbsp;
+  <img src="docs/screens/call.jpg" width="200" alt="A call: its sound, In short, and what was said">&nbsp;
+  <img src="docs/screens/screening.jpg" width="200" alt="A stranger screened: their words as they speak">&nbsp;
+  <img src="docs/screens/rings.jpg" width="200" alt="It sounds like a delivery, so it rings">
+</p>
+
+## Screening and messages
+
+With [Shizuku](https://shizuku.rikka.app/) running, Tring++ can also answer calls quietly for you:
+
+- **Screen unknown callers:** a stranger who has never called you hears a short greeting and says why they're calling. You watch their words as they speak and can pick up any time. It rings if it sounds important, and otherwise keeps a message.
+- **Take a message when you don't pick up:** a call that rang you and is still ringing at 27 seconds, just before the network gives up at 30, hears the same greeting and can leave a message of up to a minute. Calls Tring kept quiet, like strangers it silenced, are left alone. Pick up any time while they talk. It's on by default once screening is set up.
+- **Pick up partway:** if the call is being recorded, what they said before you picked up opens the recording, so its transcript starts from their first word.
+
+Messages are kept like recordings, with their words and a note saying who called. Set it up in Tring++ under **Call screening**: start Shizuku (again after every restart), tap **Allow**, and switch it on. The greeting uses your phone's own voice, so add a Hindi voice in the phone's text-to-speech settings. Some phones won't share a call's sound with an app; there, calls keep ringing as usual.
 
 ## Set it up
 
@@ -16,13 +33,13 @@ You need Tring as your phone app (its Ghanti side), on Android 10 or newer.
    - **"Blocked by Play Protect"?** In India and some other countries, Google blocks apps downloaded from a browser or file manager if they ask for Accessibility, which this one needs to record. Either:
      - pause it for the install: **Play Store → your picture → Play Protect → ⚙ → turn off Scan apps with Play Protect**, install, and turn it back on (the recorder reminds you), or
      - install from a computer instead: `adb install tring-recorder-x.y.apk`, which isn't blocked.
-2. **Open Tring Recorder** and tap **Allow** next to *Microphone*, then next to *A note when a recording is saved*.
-3. Tap **Open** next to *Turn on Tring Recorder in Accessibility*, pick **Tring Recorder**, and switch it on.
+2. **Open Tring++** and tap **Allow** next to *Microphone*, then next to *A note when a recording is saved*.
+3. Tap **Open** next to *Turn on Tring++ in Accessibility*, pick **Tring++**, and switch it on.
 4. **Is the switch greyed out?** Android 13 and newer block Accessibility for apps installed from a file until you say otherwise:
-   1. Go back to Tring Recorder and tap **Open App info**.
+   1. Go back to Tring++ and tap **Open App info**.
    2. Tap **⋮** in the top corner, then **Allow restricted settings**, and confirm with your PIN or fingerprint.
    3. Repeat step 3.
-5. Tring Recorder says **All set**. Close Tring from your recent apps once and open it again, so it finds the recorder.
+5. Tring++ says **All set**. Close Tring from your recent apps once and open it again, so it finds the recorder.
 
 To test it, call someone, tap **Record**, say a few words each, and hang up. A *Call recorded* note appears; tap it to play the recording and read it.
 
@@ -51,7 +68,7 @@ To test it, call someone, tap **Record**, say a few words each, and hang up. A *
 
 ## Turn it off
 
-Switch Tring Recorder off in Accessibility, or uninstall it. Tring's Record button and auto-record setting disappear with it.
+Switch Tring++ off in Accessibility, or uninstall it. Tring's Record button and auto-record setting disappear with it.
 
 ## Source
 

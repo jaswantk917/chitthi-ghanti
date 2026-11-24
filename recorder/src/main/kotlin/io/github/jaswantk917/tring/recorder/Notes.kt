@@ -31,6 +31,9 @@ data class Minute(val index: Int, val lines: List<Line>) {
         private const val MS = 60_000
 
         fun of(lines: List<Line>) = lines.groupBy { it.atMs / MS }.map { (index, heard) -> Minute(index, heard) }
+
+        /** the transcript to paste somewhere: a plain paragraph per minute */
+        fun plain(lines: List<Line>) = of(lines).joinToString("\n\n") { minute -> minute.lines.joinToString(" ") { it.text.trim() } }
     }
 }
 
@@ -72,7 +75,7 @@ class Notes(private val context: Context) {
      * made yet, or was made by an older prompt and is due to be made again.
      */
     fun summary(id: Long): String? = File(dir, "$id.summary").takeIf { it.exists() }?.readText()
-        ?.takeIf { it.startsWith(VERSION) }?.removePrefix(VERSION)
+        ?.takeIf { it.startsWith(VERSION) }?.removePrefix(VERSION)?.let(Summarizer::clean)
 
     fun saveSummary(id: Long, text: String) {
         File(dir, "$id.summary").writeText(VERSION + text)
@@ -82,13 +85,18 @@ class Notes(private val context: Context) {
     /** what you've been talking about lately, and the newest call it took in */
     fun lately(): Pair<String, Long>? {
         val text = File(dir, "lately").takeIf { it.exists() }?.readText()?.takeIf { it.startsWith(VERSION) }?.removePrefix(VERSION) ?: return null
-        return text.substringAfter('\n') to (text.substringBefore('\n').toLongOrNull() ?: 0L)
+        return Summarizer.clean(text.substringAfter('\n')) to (text.substringBefore('\n').toLongOrNull() ?: 0L)
     }
 
     fun saveLately(text: String, newest: Long) = File(dir, "lately").writeText("$VERSION$newest\n$text")
 
+    /** a message a screened caller left, rather than a call you were on */
+    fun isMessage(id: Long) = File(dir, "$id.message").exists()
+
+    fun markMessage(id: Long) = File(dir, "$id.message").writeText("")
+
     fun forget(id: Long) {
-        listOf("turns", "transcript", "summary").forEach { File(dir, "$id.$it").delete() }
+        listOf("turns", "transcript", "summary", "message").forEach { File(dir, "$id.$it").delete() }
     }
 
     private companion object {

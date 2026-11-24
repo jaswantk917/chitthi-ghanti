@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Bundle
 import android.os.ParcelFileDescriptor
 
 /**
@@ -14,7 +15,10 @@ import android.os.ParcelFileDescriptor
  * and never learns where the files are.
  */
 class RecordingsProvider : ContentProvider() {
-    override fun onCreate() = true
+    override fun onCreate(): Boolean {
+        Screening.attach(requireContext())
+        return true
+    }
 
     private fun checkCaller() {
         if (callingPackage !in TRING) throw SecurityException("only Tring may read recordings")
@@ -26,10 +30,20 @@ class RecordingsProvider : ContentProvider() {
         val notes = Notes(context)
         return MatrixCursor(COLUMNS).apply {
             Recordings.list(context).forEach { recording ->
+                val excerpt = notes.transcript(recording.id)?.let(Excerpt::of)
                 // "" is a call too short to say what it was about: no summary to show
-                addRow(arrayOf<Any?>(recording.id, recording.at, recording.durationMs, notes.summary(recording.id)?.ifEmpty { null }))
+                addRow(arrayOf<Any?>(recording.id, recording.at, recording.durationMs, notes.summary(recording.id)?.ifEmpty { null }, excerpt?.text, if (excerpt?.more == true) 1 else 0))
             }
         }
+    }
+
+    /** Tring, before a call rings: will you take this one? Only then does it stay quiet for it. */
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        checkCaller()
+        if (method == "silenced" && arg != null) return Bundle().also { Screening.keptQuiet(arg) }
+        if (method != "screen" || arg == null) return null
+        val taking = Screening.expect(requireContext(), arg, extras?.getBoolean("stranger") == true)
+        return Bundle().apply { putBoolean("taking", taking) }
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
@@ -52,6 +66,6 @@ class RecordingsProvider : ContentProvider() {
 
         /** Tring's Play build and its debug build */
         private val TRING = setOf("io.github.jaswantk917.chitthighanti", "io.github.jaswantk917.chitthighanti.debug")
-        private val COLUMNS = arrayOf("_id", "at", "duration_ms", "summary")
+        private val COLUMNS = arrayOf("_id", "at", "duration_ms", "summary", "excerpt", "excerpt_more")
     }
 }

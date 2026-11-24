@@ -1,6 +1,8 @@
 package io.github.jaswantk917.tring.recorder
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +43,7 @@ class Processor(
     private val jobs = HashMap<Long, Job>()
     private var catching: Job? = null
     private var clearing: IndicService.Run? = null
+    private var clearingByItself = false
     private var nano: Boolean? = null
 
     private val _work = MutableStateFlow<Map<Long, Work>>(emptyMap())
@@ -60,32 +63,49 @@ class Processor(
 
     /** right after a call is saved: its transcript, then a try at its summary; [done] gets the summary, null when there is none yet */
     fun afterCall(recording: Recording, done: (String?) -> Unit) {
+        val context = app
+        if (context != null && clearing == null && _work.value[recording.id] == null && BigModel.canTake(context, recording.durationMs)) {
+            // if it can't finish, the built-in model still writes this call; if a new call stopped it, catch-up does
+            clearer(recording) { wrote -> if (wrote == false) builtIn(recording, done) else done(notes.summary(recording.id)) }
+        } else {
+            builtIn(recording, done)
+        }
+    }
+
+    private fun builtIn(recording: Recording, done: (String?) -> Unit) {
         jobs[recording.id] = scope.launch {
             lock.withLock {
-                if (listen(recording)) summarize(recording.id, recording.who)
+                if (listen(recording)) summarize(recording.id, recording.who, recording.durationMs)
             }
             done(notes.summary(recording.id))
         }
+    }
+
+    /** a call is starting: the clearer model gives its memory back, unless you asked for this run yourself */
+    fun yieldToCall() {
+        Handler(Looper.getMainLooper()).post { if (clearingByItself) clearing?.stop() }
     }
 
     fun transcribe(recording: Recording) {
         jobs[recording.id]?.cancel()
         jobs[recording.id] = scope.launch {
             lock.withLock {
-                if (listen(recording)) summarize(recording.id, recording.who)
+                if (listen(recording)) summarize(recording.id, recording.who, recording.durationMs)
             }
         }
     }
 
     /**
-     * The clearer transcript of [recording], only when asked for: IndicConformer in its own process
-     * beside the queue, replacing the built-in model's transcript and then its summary.
+     * The clearer transcript of [recording]: IndicConformer in its own process beside the queue,
+     * replacing the built-in model's transcript and then its summary. [byItself] is a run nobody
+     * asked for, told true when written, false when it failed, null when stopped.
      */
-    fun clearer(recording: Recording) {
+    fun clearer(recording: Recording, byItself: ((Boolean?) -> Unit)? = null) {
         val context = app ?: return
         if (_work.value[recording.id] != null || clearing != null) return
         set(recording.id, Work.Listening(Transcriber.Progress(0, 0), emptyList(), clearer = true))
-        clearing = IndicService.Run(
+        clearingByItself = byItself != null
+        val run = IndicService.Run(
             context, recording,
             onProgress = { progress -> listening(recording.id) { it.copy(progress = progress) } },
             onLine = { line -> listening(recording.id) { it.copy(lines = it.lines + line) } },
@@ -95,16 +115,39 @@ class Processor(
                 notes.forgetSummary(recording.id)
                 _saved.update { it + 1 }
                 summarize(recording)
+                if (byItself != null) scope.launch {
+                    jobs[recording.id]?.join()
+                    byItself(true)
+                }
             },
             onFailed = { message ->
                 clearing = null
-                set(recording.id, Work.Failed("Couldn't write the clearer transcript ($message)."))
+                if (byItself == null) {
+                    set(recording.id, Work.Failed("Couldn't write the clearer transcript ($message)."))
+                } else {
+                    set(recording.id, null)
+                    byItself(false)
+                }
             },
             onStopped = {
                 clearing = null
                 set(recording.id, null)
+                byItself?.invoke(null)
             },
-        ).also { it.start() }
+        )
+        clearing = run
+        try {
+            run.start()
+        } catch (e: IllegalStateException) {
+            // Android can refuse a foreground service from the background
+            clearing = null
+            if (byItself == null) {
+                set(recording.id, Work.Failed("Couldn't write the clearer transcript (${e.message})."))
+            } else {
+                set(recording.id, null)
+                byItself(false)
+            }
+        }
     }
 
     fun stopClearer() {
@@ -113,7 +156,7 @@ class Processor(
 
     fun summarize(recording: Recording) {
         if (_work.value[recording.id] != null) return
-        jobs[recording.id] = scope.launch { lock.withLock { summarize(recording.id, recording.who) } }
+        jobs[recording.id] = scope.launch { lock.withLock { summarize(recording.id, recording.who, recording.durationMs) } }
     }
 
     /** transcripts and summaries for the newest calls that have none, then "Lately" when it is behind */
@@ -127,7 +170,7 @@ class Processor(
                     if (_work.value[recording.id] != null) return@withLock false
                     // Shruti is missing or failing: the next call would fail the same way
                     if (notes.transcript(recording.id) == null && !listen(recording)) return@withLock true
-                    if (summarizing && notes.summary(recording.id) == null) summarizing = summarize(recording.id, recording.who)
+                    if (summarizing && notes.summary(recording.id) == null) summarizing = summarize(recording.id, recording.who, recording.durationMs)
                     false
                 }
                 if (stop) break
@@ -145,7 +188,7 @@ class Processor(
         for (recording in recordings.take(LATELY_CALLS)) {
             val stop = lock.withLock {
                 _work.value[recording.id] == null && notes.transcript(recording.id) != null && notes.summary(recording.id) == null &&
-                    !summarize(recording.id, recording.who)
+                    !summarize(recording.id, recording.who, recording.durationMs)
             }
             if (stop) return
         }
@@ -205,7 +248,7 @@ class Processor(
     }
 
     /** true when there is a summary afterwards, or nothing to summarise */
-    private suspend fun summarize(id: Long, who: String): Boolean {
+    private suspend fun summarize(id: Long, who: String, callMs: Long): Boolean {
         val lines = notes.transcript(id) ?: return true
         if (!Summarizer.worthSummarising(lines)) {
             notes.saveSummary(id, "")
@@ -214,7 +257,7 @@ class Processor(
         }
         if (!nanoReady()) return false
         set(id, Work.Summarizing)
-        val text = summarizer.call(who, lines)
+        val text = summarizer.call(who, lines, callMs)
         if (text != null) {
             notes.saveSummary(id, text)
             _saved.update { it + 1 }

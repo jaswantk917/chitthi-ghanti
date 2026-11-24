@@ -98,6 +98,7 @@ class CallRecorder : AccessibilityService() {
             // the app's own folder on shared storage, readable over USB: the last call's raw sound and the per-call numbers;
             // each call has its own scratch file, since the last one can still be mixing down
             val own = getExternalFilesDir(null)
+            Processor.get(this).yieldToCall()
             val capture = Capture(
                 File(own ?: cacheDir, "call-${System.currentTimeMillis()}.pcm"),
                 keep = own?.let { File(it, "last-call.pcm") }, stats = own?.let { File(it, "calls.log") },
@@ -121,10 +122,11 @@ class CallRecorder : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.removeOnModeChangedListener(callEnded)
         report(STATE_OFF)
         notifySaving(call, null)
+        val lead = Screening.takeLead(call.startedAt)
         // the mixdown reads the whole call back, a minute or more for a long call, so it runs off the main thread
         thread(name = "mixdown") {
             // a call ended before any sound came through leaves nothing worth keeping
-            val kept = call.capture.finish(call.output.fileDescriptor, Notes(this).turnsFile(ContentUris.parseId(call.uri))) { step -> notifySaving(call, step) }
+            val kept = call.capture.finish(call.output.fileDescriptor, Notes(this).turnsFile(ContentUris.parseId(call.uri)), lead) { step -> notifySaving(call, step) }
             release(call, keep = kept)
         }
     }

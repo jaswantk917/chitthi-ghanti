@@ -16,8 +16,8 @@ android {
         applicationId = "io.github.jaswantk917.tring.recorder"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 12
-        versionName = "1.11"
+        versionCode = 14
+        versionName = "1.13"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Shruti's engine comes prebuilt for arm64 only; its C++ brings no runtime of its own
         ndk { abiFilters += "arm64-v8a" }
@@ -80,6 +80,8 @@ android {
 
     buildFeatures {
         compose = true
+        aidl = true
+        buildConfig = true
     }
 }
 
@@ -102,6 +104,10 @@ dependencies {
     androidTestImplementation(libs.androidx.test.junit)
     // IndicConformer, for clearer transcripts
     implementation(libs.onnxruntime.android)
+    // call screening: Shizuku lends the adb shell's call-audio permissions
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
+    implementation(libs.hiddenapibypass)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)

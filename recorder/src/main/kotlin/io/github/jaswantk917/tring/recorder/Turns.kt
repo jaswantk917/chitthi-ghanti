@@ -45,6 +45,10 @@ object Turns {
         }
     }
 
+    /** the call's turns after [leadMs] of the caller alone: what screening heard before you picked up */
+    fun withLead(leadMs: Int, turns: List<Turn>) =
+        if (leadMs <= 0) turns else listOf(Turn(0, leadMs, them = true)) + turns.map { Turn(it.startMs + leadMs, it.endMs + leadMs, it.them) }
+
     fun write(turns: List<Turn>, file: File) {
         file.parentFile?.mkdirs()
         file.writeText(turns.joinToString("\n") { "${it.startMs} ${it.endMs} ${if (it.them) "T" else "Y"}" })

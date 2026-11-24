@@ -11,11 +11,22 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!-- call screening: sits beside Tring on a call; Android only grants this through adb, here through Shizuku -->
+    <uses-permission android:name="android.permission.MANAGE_ONGOING_CALLS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- to tell Tring (or its debug build) whether a recording started -->
     <queries>
         <package android:name="io.github.jaswantk917.chitthighanti" />
         <package android:name="io.github.jaswantk917.chitthighanti.debug" />
+        <!-- call screening: the phone's own speech recognition and voice, and opening Shizuku -->
+        <package android:name="moe.shizuku.privileged.api" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -40,7 +51,7 @@
         <activity
             android:name=".SetupActivity"
             android:exported="false"
-            android:theme="@style/Setup" />
+            android:theme="@android:style/Theme.Material.NoActionBar" />
 
         <!-- who you talked to lately and what about, for assistants (Android 16+) -->
         <service
@@ -85,6 +96,34 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/call_recorder" />
         </service>
+
+        <!-- answers a stranger silently, only when Tring hands the call over -->
+        <service
+            android:name=".ScreenService"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
+        <activity
+            android:name=".ScreenActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:showWhenLocked="true"
+            android:taskAffinity=".screening"
+            android:theme="@android:style/Theme.Material.NoActionBar"
+            android:turnScreenOn="true" />
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- Tring's Recents lists and plays recordings through this; it checks the caller is Tring -->
         <provider

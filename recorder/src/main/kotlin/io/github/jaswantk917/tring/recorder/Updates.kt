@@ -108,7 +108,7 @@ object Updates {
             NOTIFICATION,
             Notification.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle("Tring Recorder ${release.version} is out")
+                .setContentTitle("Tring++ ${release.version} is out")
                 .setContentText(release.notes.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.removePrefix("- ") ?: "Tap to see what's new")
                 .setContentIntent(open)
                 .addAction(Notification.Action.Builder(null, "Download", get).build())

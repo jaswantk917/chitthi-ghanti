@@ -18,13 +18,17 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -73,7 +77,13 @@ class RecordingsScreensTest {
     }
 
     private fun content(body: @Composable () -> Unit) {
-        rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
+        rule.runOnUiThread {
+            // the phone may lock mid-run; the test screen shows over it and keeps the screen on while it's up
+            rule.activity.setShowWhenLocked(true)
+            rule.activity.setTurnScreenOn(true)
+            rule.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            rule.activity.enableEdgeToEdge()
+        }
         rule.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.3f)) {
@@ -114,10 +124,10 @@ class RecordingsScreensTest {
         rule.onNodeWithText("Version 1.8 is out").assertIsDisplayed()
         rule.onNodeWithText("Summaries for every call").assertIsDisplayed()
         rule.onNodeWithText("Lately").assertIsDisplayed()
-        notCut("Recordings")
-        notCut("Download")
+        notCut("Your calls")
+        notCut("Get it")
         snap("list-top")
-        rule.onNode(hasScrollAction()).performScrollToIndex(8)
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("Mummy"))
         rule.onNodeWithText("Mummy").assertIsDisplayed()
         snap("list-bottom")
     }
@@ -125,12 +135,12 @@ class RecordingsScreensTest {
     @Test
     fun aCallShowsItsPlayerSummaryAndTranscript() {
         app(calls, opened = 900_001)
-        rule.onNodeWithText("Summary").assertIsDisplayed()
+        rule.onNodeWithText("In short").assertIsDisplayed()
         rule.onNodeWithContentDescription("Play").assertIsDisplayed()
-        notCut("Transcript")
+        notCut("What was said")
         snap("call-top")
-        rule.onNode(hasScrollAction()).performScrollToIndex(7)
-        rule.onNodeWithText("हाँ हो जाएगा, मैं आज रात ही कर दूँगा।").assertIsDisplayed()
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("हाँ हो जाएगा", substring = true))
+        rule.onNodeWithText("हाँ हो जाएगा", substring = true).assertIsDisplayed()
         snap("call-bottom")
         rule.onNodeWithContentDescription("Delete").performClick()
         rule.onNodeWithText("Delete this recording?").assertIsDisplayed()
@@ -147,9 +157,56 @@ class RecordingsScreensTest {
     @Test
     fun beforeSetupAndBeforeAnyCall() {
         app(emptyList(), setupDone = false)
-        rule.onNodeWithText("Finish setting up").assertIsDisplayed()
-        rule.onNodeWithText("No recordings yet").assertIsDisplayed()
-        notCut("Set up")
+        rule.onNodeWithText("One step left").assertIsDisplayed()
+        rule.onNodeWithText("Your calls will land here").assertIsDisplayed()
+        notCut("Finish")
         snap("empty-setup")
+    }
+
+    @Test
+    fun aScreenedCallKeepsItsActionsInReachAtEveryStage() {
+        // the screen's pulse never settles, so the clock is stepped by hand
+        rule.mainClock.autoAdvance = false
+        var live by mutableStateOf(Screening.Live("+91 98765 43210", Screening.Stage.Greeting))
+        content { ScreenPage(live, onPickUp = {}, onHangUp = {}) }
+        val long = "नमस्ते मैं बैंक से बोल रहा हूँ आपके क्रेडिट कार्ड के बारे में बात करनी थी ".repeat(9).trim()
+        listOf(
+            live,
+            live.copy(stage = Screening.Stage.Listening, words = "नमस्ते, मैं कूरियर से बोल रहा हूँ"),
+            live.copy(stage = Screening.Stage.Listening, words = long),
+            live.copy(stage = Screening.Stage.Deciding, words = long),
+            live.copy(stage = Screening.Stage.Ringing, words = "आपका पार्सल गेट पर है", reason = "Sounds like a delivery"),
+            live.copy(stage = Screening.Stage.Message, words = long, reason = "Sounds like a sales call"),
+        ).forEachIndexed { i, state ->
+            live = state
+            rule.mainClock.advanceTimeBy(900)
+            rule.onNodeWithText("Pick up").assertIsDisplayed()
+            rule.onNodeWithText("Hang up").assertIsDisplayed()
+            snap("screen-$i-${state.stage}")
+        }
+        live = live.copy(stage = Screening.Stage.Ended, saved = true)
+        rule.mainClock.advanceTimeBy(900)
+        rule.onNodeWithText("Message saved").assertIsDisplayed()
+        snap("screen-ended")
+    }
+
+    @Test
+    fun theVoicemailSwitchFits() {
+        var on by mutableStateOf(true)
+        content { VoicemailRow(on) { on = it } }
+        rule.onNodeWithText("Take a message when you don't pick up").assertIsDisplayed()
+        rule.onNode(isToggleable()).assertIsOn().performClick()
+        rule.onNode(isToggleable()).assertIsOff()
+        snap("settings-voicemail")
+    }
+
+    @Test
+    fun settingsShowRecordingAndScreening() {
+        content { SetupPage(0, onBack = {}, ask = {}) }
+        rule.onNodeWithText("Recording").assertIsDisplayed()
+        snap("settings-top")
+        rule.onNode(hasScrollAction()).performScrollToNode(hasText("Guide and source"))
+        rule.onNodeWithText("Guide and source").assertIsDisplayed()
+        snap("settings-bottom")
     }
 }

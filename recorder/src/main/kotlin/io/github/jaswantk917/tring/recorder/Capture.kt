@@ -48,13 +48,16 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         return true
     }
 
-    /** stops the microphones and writes the mixed call to [output], and who talked when to [turns]; false when nothing was recorded */
-    fun finish(output: FileDescriptor, turns: File? = null, onStep: (Step) -> Unit = {}): Boolean {
+    /**
+     * stops the microphones and writes the mixed call to [output], and who talked when to [turns]; false when nothing was recorded.
+     * [lead]: what a screened caller said before you picked up, 16 kHz, put first
+     */
+    fun finish(output: FileDescriptor, turns: File? = null, lead: ShortArray? = null, onStep: (Step) -> Unit = {}): Boolean {
         running = false
         // never started: mixing down sound already in [scratch], as a device test does with a real call
         if (::worker.isInitialized) worker.join(5_000)
         return try {
-            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns, onStep)
+            if (scratch.length() < Mixdown.FRAME * channels * 2) false else mixAndEncode(output, turns, lead, onStep)
         } catch (e: Exception) {
             Log.w(TAG, "mixdown failed", e)
             false
@@ -139,7 +142,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         Levelling("Evening out the loudness"),
     }
 
-    private fun mixAndEncode(output: FileDescriptor, turns: File?, onStep: (Step) -> Unit): Boolean {
+    private fun mixAndEncode(output: FileDescriptor, turns: File?, lead: ShortArray?, onStep: (Step) -> Unit): Boolean {
         // 1: how loud each microphone is, frame by frame, to follow whoever is talking between them
         onStep(Step.Following)
         val bottomEnergy = ArrayList<Float>()
@@ -183,9 +186,13 @@ class Capture(private val scratch: File, private val keep: File? = null, private
             val shapes = ArrayList<Voices.Shape>()
             pcmFrames(clean) { shapes += meter.shape(it) }
             val talking = BooleanArray(shapes.size) { denoised.speechAt(it * Mixdown.FRAME + Mixdown.FRAME / 2) }
+            val frameMs = Mixdown.FRAME * 1_000L / Mixdown.RATE
+            // a caller who spoke while screened is worth keeping even if you hung up straight away
+            if (lead == null && !Keep.worth(shapes.size * frameMs, talking.count { it } * frameMs)) return false
             val caller = Voices.callerWeights(shapes, talking)
             report(weights, denoised, shapes, talking, caller)
-            turns?.let { runCatching { Turns.write(Turns.from(caller, talking), it) } }
+            val leadFrames = lead?.let { (it.size + Mixdown.FRAME - 1) / Mixdown.FRAME } ?: 0
+            turns?.let { runCatching { Turns.write(Turns.withLead((leadFrames * frameMs).toInt(), Turns.from(caller, talking)), it) } }
 
             onStep(Step.Levelling)
             // 5: each voice levelled on its own, the caller's thinner sound lifted where speech is made out;
@@ -196,6 +203,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
             val presence = Biquad.peak(Mixdown.RATE, 2_000f, 4f)
             val encoder = Encoder(output)
             val out = ShortArray(Mixdown.FRAME)
+            lead?.let { writeLead(encoder, it, out) }
             var f = 0
             pcmFrames(clean) { frame ->
                 val c = caller[f.coerceAtMost(caller.lastIndex)]
@@ -213,6 +221,17 @@ class Capture(private val scratch: File, private val keep: File? = null, private
         } finally {
             mixed.delete()
             clean.delete()
+        }
+    }
+
+    /** straight from the line, so clean already: only brought to the call's loudness */
+    private fun writeLead(encoder: Encoder, lead: ShortArray, out: ShortArray) {
+        val leveler = Leveler(Mixdown.RATE)
+        for (start in lead.indices step Mixdown.FRAME) {
+            for (i in 0 until Mixdown.FRAME) {
+                out[i] = lead.getOrNull(start + i)?.let { (leveler.process(it / 32768f) * 32767f).toInt().toShort() } ?: 0
+            }
+            encoder.write(out)
         }
     }
 
@@ -273,7 +292,7 @@ class Capture(private val scratch: File, private val keep: File? = null, private
     }
 
     /** mono 16-bit PCM in, AAC in an .m4a out */
-    private class Encoder(output: FileDescriptor) {
+    internal class Encoder(output: FileDescriptor) {
         private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
             val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, Mixdown.RATE, 1).apply {
                 setInteger(MediaFormat.KEY_BIT_RATE, 48_000)

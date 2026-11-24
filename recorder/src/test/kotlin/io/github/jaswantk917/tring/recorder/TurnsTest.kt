@@ -51,4 +51,19 @@ class TurnsTest {
         assertEquals("+91 98765 43210", Recordings.who("+91 98765 43210 · 21 Nov, 3.16 pm.m4a"))
         assertEquals("Call", Recordings.who(" · 21 Nov, 3.16 pm.m4a"))
     }
+
+    @Test
+    fun `what they said while screened comes first, as them, and the call follows`() {
+        val call = listOf(Turn(0, 900, them = false), Turn(1_200, 2_000, them = true))
+        assertEquals(
+            listOf(Turn(0, 4_000, them = true), Turn(4_000, 4_900, them = false), Turn(5_200, 6_000, them = true)),
+            Turns.withLead(4_000, call),
+        )
+    }
+
+    @Test
+    fun `no screening, the call's turns are unchanged`() {
+        val call = listOf(Turn(0, 900, them = false))
+        assertEquals(call, Turns.withLead(0, call))
+    }
 }

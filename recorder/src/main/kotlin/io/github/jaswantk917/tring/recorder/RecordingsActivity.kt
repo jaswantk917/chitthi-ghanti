@@ -1,5 +1,14 @@
 package io.github.jaswantk917.tring.recorder
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.PersistableBundle
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.rounded.ExpandMore
 import android.content.Context
@@ -74,12 +83,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Slider
@@ -87,6 +98,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.ripple
+import androidx.compose.material3.toShape
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -97,12 +110,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -280,24 +295,30 @@ private fun RecordingList(
     val bars = WindowInsets.systemBars.asPaddingValues()
     val work by processor.work.collectAsState()
     val tick by processor.saved.collectAsState()
+    val context = LocalContext.current
+    val shell by Shell.status.collectAsState()
+    val screening = remember(shell, recordings) { Screening.isOn(context) && Screening.canRun(context) }
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = bars.calculateTopPadding() + 24.dp, bottom = bars.calculateBottomPadding() + 32.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = bars.calculateTopPadding() + 20.dp, bottom = bars.calculateBottomPadding() + 40.dp),
     ) {
         item(key = "title") {
-            Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text("Recordings", style = MaterialTheme.typography.headlineLarge)
-                    if (!recordings.isNullOrEmpty()) {
-                        Text(
-                            if (recordings.size == 1) "1 call" else "${recordings.size} calls",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Text("Your calls", style = MaterialTheme.typography.displaySmall)
+                    Text(
+                        when {
+                            screening -> "Answering strangers for you"
+                            recordings.isNullOrEmpty() -> "Kept on this phone, only for you"
+                            recordings.size == 1 -> "1 call kept on this phone"
+                            else -> "${recordings.size} calls kept on this phone"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (screening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
-                IconButton(onClick = onSetup) { Icon(Icons.Rounded.Tune, "Setup") }
+                FilledTonalIconButton(onClick = onSetup, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.Tune, "Settings") }
             }
         }
         if (update != null) item(key = "update") { UpdateCard(update, onUpdate) }
@@ -314,15 +335,14 @@ private fun RecordingList(
                         day = label
                         item(key = "day-$label-${recording.id}") {
                             Text(
-                                label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 8.dp, top = 16.dp, bottom = 4.dp).animateItem(),
+                                label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 20.dp, bottom = 4.dp).animateItem(),
                             )
                         }
                     }
                     item(key = recording.id) {
                         RecordingRow(
-                            recording,
-                            summarised = remember(recording.id, tick) { !notes.summary(recording.id).isNullOrEmpty() },
+                            recording, notes, tick,
                             working = work[recording.id].let { it != null && it !is Processor.Work.Failed },
                             onClick = { onOpen(recording) },
                             modifier = Modifier.animateItem(),
@@ -336,36 +356,33 @@ private fun RecordingList(
 
 @Composable
 private fun UpdateCard(update: Release, onUpdate: (Release) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            Text("Version ${update.version} is out", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
-            val first = update.notes.lineSequence().map { it.trim().removePrefix("- ").removePrefix("* ") }.firstOrNull { it.isNotBlank() && !it.startsWith("#") }
-            if (first != null) {
-                Text(first, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+    val scheme = MaterialTheme.colorScheme
+    Surface(color = scheme.surfaceContainerHigh, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Version ${update.version} is out", style = MaterialTheme.typography.titleMedium)
+                val first = update.notes.lineSequence().map { it.trim().removePrefix("- ").removePrefix("* ") }.firstOrNull { it.isNotBlank() && !it.startsWith("#") }
+                if (first != null) {
+                    Text(first, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                }
             }
-            Button(
-                onClick = { onUpdate(update) },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary, contentColor = MaterialTheme.colorScheme.onTertiary),
-                modifier = Modifier.padding(top = 12.dp),
-            ) { Text("Download") }
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = { onUpdate(update) }) { Text("Get it") }
         }
     }
 }
 
 @Composable
 private fun SetupCard(onSetup: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Column(Modifier.padding(20.dp)) {
-            Text("Finish setting up", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
-            Text(
-                "Calls can't be recorded until the microphone and Accessibility are on.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
-            )
-            Button(
-                onClick = onSetup,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
-            ) { Text("Set up") }
+    val scheme = MaterialTheme.colorScheme
+    Surface(color = scheme.tertiaryContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Row(Modifier.padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("One step left", style = MaterialTheme.typography.titleMedium, color = scheme.onTertiaryContainer)
+                Text("Calls can't be recorded until this is done.", style = MaterialTheme.typography.bodySmall, color = scheme.onTertiaryContainer, modifier = Modifier.padding(top = 2.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = onSetup, colors = ButtonDefaults.buttonColors(containerColor = scheme.tertiary, contentColor = scheme.onTertiary)) { Text("Finish") }
         }
     }
 }
@@ -381,12 +398,13 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
     val haptics = LocalHapticFeedback.current
     // folded away stays folded away, the next time the app opens too
     val prefs = remember { context.getSharedPreferences("ui", Context.MODE_PRIVATE) }
-    var open by remember { mutableStateOf(prefs.getBoolean(LATELY_OPEN, true)) }
+    // three lines until asked for more, so your calls stay on the first screen
+    var open by remember { mutableStateOf(prefs.getBoolean(LATELY_OPEN, false)) }
     val turn by animateFloatAsState(if (open) 180f else 0f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "fold")
     if (canSummarize == false) return
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 16.dp).animateContentSize()) {
-            val color = MaterialTheme.colorScheme.onPrimaryContainer
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 16.dp).animateContentSize()) {
+            val color = MaterialTheme.colorScheme.onSurface
             Row(
                 Modifier.clip(RoundedCornerShape(16.dp)).clickable {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
@@ -395,16 +413,15 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
                 },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Rounded.AutoAwesome, null, tint = color, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Lately", style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.weight(1f))
                 if (open) RegenerateButton(enabled = !busy && summarised > 0, onClick = { processor.lately(recordings) })
                 Icon(
-                    Icons.Rounded.ExpandMore, if (open) "Fold Lately away" else "Show Lately", tint = color,
+                    Icons.Rounded.ExpandMore, if (open) "Show less" else "Show more", tint = color,
                     modifier = Modifier.padding(12.dp).size(24.dp).rotate(turn),
                 )
             }
-            if (!open) return@Column
             val state = when {
                 busy -> 0
                 text != null -> 1
@@ -414,7 +431,10 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
             Crossfade(state, label = "lately") {
                 when (it) {
                     0 -> Thinking(if (summarised == 1) "Reading your last call…" else "Reading your last $summarised calls…", color)
-                    1 -> Text(text.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 8.dp, end = 12.dp))
+                    1 -> Text(
+                        text.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (open) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(end = 14.dp),
+                    )
                     2 -> Thinking("Listening to your recent calls…", color)
                     else -> Text("What you've been talking about shows here once calls are transcribed.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
                 }
@@ -423,48 +443,66 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
     }
 }
 
+/** one call: who, what it was about in their words, and how long, with no box around it */
 @Composable
-private fun RecordingRow(recording: Recording, summarised: Boolean, working: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RecordingRow(recording: Recording, notes: Notes, tick: Int, working: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
-    Row(
-        modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(20.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-            Text(recording.who.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "#", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+    val scheme = MaterialTheme.colorScheme
+    val gist by produceState<String?>(null, recording.id, tick) {
+        value = withContext(Dispatchers.IO) {
+            notes.summary(recording.id)?.takeIf { it.isNotEmpty() }?.lineSequence()?.first()?.removePrefix("• ")
+                ?: notes.transcript(recording.id)?.let(Excerpt::of)?.text
         }
+    }
+    val message = remember(recording.id, tick) { notes.isMessage(recording.id) }
+    Row(
+        modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(22.dp))
+            .clickable(interactionSource = interaction, indication = ripple(), onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Avatar(recording.who, 48.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(recording.who, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                "${timeLabel(recording.at)} · ${durationLabel(recording.durationMs)}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Crossfade(if (working) 1 else if (summarised) 2 else 0, label = "row") {
-            when (it) {
-                1 -> LoadingIndicator(Modifier.size(28.dp))
-                2 -> Icon(Icons.Rounded.AutoAwesome, "Summarised", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                else -> Unit
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(recording.who, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (message) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Message", style = MaterialTheme.typography.labelSmall, color = scheme.onTertiaryContainer, maxLines = 1,
+                            modifier = Modifier.clip(CircleShape).background(scheme.tertiaryContainer).padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Crossfade(working, label = "row") { busy ->
+                    if (busy) LoadingIndicator(Modifier.size(20.dp))
+                    else Text(timeLabel(recording.at), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                }
             }
+            gist?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+            }
+            Text(spokenLength(recording.durationMs), style = MaterialTheme.typography.labelSmall, color = scheme.outline, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
 
 @Composable
 private fun Empty() {
-    Column(Modifier.fillMaxWidth().padding(top = 96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
-        Text("No recordings yet", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(top = 72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(96.dp).clip(MaterialShapes.Cookie9Sided.toShape()).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.GraphicEq, null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(44.dp))
+        }
+        Text("Your calls will land here", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 20.dp))
         Text(
             "Tap Record during a call in Tring, or let it record calls by itself.",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
+            style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp, start = 32.dp, end = 32.dp),
         )
     }
 }
@@ -483,7 +521,7 @@ private fun RecordingDetail(
     val canSummarize by processor.canSummarize.collectAsState()
     val work = all[recording.id]
     val lines = remember(recording.id, tick) { notes.transcript(recording.id) }
-    val summary = remember(recording.id, tick) { notes.summary(recording.id) }
+    val summary = remember(recording.id, tick) { notes.summary(recording.id)?.let { Summarizer.tidy(it, recording.durationMs) } }
     val clearer = remember(recording.id, tick) { notes.clearer(recording.id) }
     val model by IndicModel.state.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
@@ -505,6 +543,8 @@ private fun RecordingDetail(
     val listening = work as? Processor.Work.Listening
     val shown = listening?.lines ?: lines.orEmpty()
     val list = rememberLazyListState()
+    val turns = remember(recording.id, tick) { notes.turns(recording.id) }
+    val message = remember(recording.id, tick) { notes.isMessage(recording.id) }
     // the bar only lifts off the page once the page has moved under it
     val lifted by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "bar")
     Column(Modifier.fillMaxSize()) {
@@ -512,30 +552,37 @@ private fun RecordingDetail(
         Modifier.fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = lifted))
             .padding(top = bars.calculateTopPadding())
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-        Spacer(Modifier.weight(1f))
+        Text(
+            recording.who, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp).alpha(lifted),
+        )
         IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, "Share") }
         IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Delete") }
     }
     LazyColumn(
         Modifier.fillMaxWidth().weight(1f),
         state = list,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bars.calculateBottomPadding() + 40.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = bars.calculateBottomPadding() + 48.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "title") {
-            Column(Modifier.padding(horizontal = 8.dp)) {
-                Text(recording.who, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "${dayLabel(recording.at)}, ${timeLabel(recording.at)} · ${durationLabel(recording.durationMs)}",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Avatar(recording.who, 64.dp)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(recording.who, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        (if (message) "Left a message · " else "") + "${dayLabel(recording.at)}, ${timeLabel(recording.at)}",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
-        item(key = "player") { Player(playback) }
+        item(key = "player") { Player(playback, turns) }
         if (canSummarize != false || summary != null) {
             item(key = "summary") {
                 SummaryCard(
@@ -545,9 +592,10 @@ private fun RecordingDetail(
             }
         }
         item(key = "transcript-head") {
-            Column(Modifier.padding(start = 8.dp, top = 12.dp)) {
+            Column(Modifier.padding(top = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Transcript", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("What was said", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    if (listening == null && shown.isNotEmpty()) CopyButton { Minute.plain(shown) }
                     RegenerateButton(enabled = listening == null && supported, onClick = { processor.transcribe(recording) })
                 }
                 if (shown.any { it.unsure }) {
@@ -562,17 +610,17 @@ private fun RecordingDetail(
         item(key = "transcript-state") {
             Column(Modifier.animateContentSize()) {
                 if (supported && fits) {
-                    ClearerCard(
+                    ClearerOffer(
                         model, written = clearer, busy = work != null, onMobileData = rememberOnMobileData(),
                         onDownload = { IndicModel.download(context) }, onCancel = IndicModel::cancel, onWrite = { processor.clearer(recording) },
                     )
                 }
                 listening?.let { TranscribeProgress(it.progress, onStop = if (it.clearer) processor::stopClearer else null) }
-                (work as? Processor.Work.Failed)?.let { Text(it.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+                (work as? Processor.Work.Failed)?.let { Text(it.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
                 if (!supported) {
-                    Text("Transcripts need a phone with a 64-bit ARM processor.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                    Text("Transcripts need a phone with a 64-bit ARM processor.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
                 } else if (work == null && lines?.isEmpty() == true) {
-                    Text("No words were made out in this call.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+                    Text("No words were made out in this call.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
                 }
             }
         }
@@ -618,7 +666,7 @@ private fun rememberPlayback(recording: Recording): Playback {
 }
 
 @Composable
-private fun Player(playback: Playback) {
+private fun Player(playback: Playback, turns: List<Turn>?) {
     val haptics = LocalHapticFeedback.current
     val player = playback.player
     val playing = playback.playing
@@ -626,8 +674,8 @@ private fun Player(playback: Playback) {
     val length = playback.length
     // the button rounds into a circle while it plays and settles back into a soft square at rest
     val corner by animateIntAsState(if (playing) 50 else 30, MaterialTheme.motionScheme.fastSpatialSpec(), label = "shape")
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(32.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 14.dp, end = 18.dp, top = 14.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             FilledIconButton(
                 onClick = {
                     val p = player ?: return@FilledIconButton
@@ -641,17 +689,16 @@ private fun Player(playback: Playback) {
             ) {
                 Crossfade(playing, label = "icon") { Icon(if (it) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (it) "Pause" else "Play", modifier = Modifier.size(32.dp)) }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Slider(
-                    value = position.toFloat() / length,
-                    onValueChange = { playback.position = (it * length).toInt(); player?.seekTo(playback.position) },
-                    enabled = player != null,
+                VoiceTimeline(
+                    turns, length, position, enabled = player != null,
+                    onSeek = { to -> playback.position = to; player?.seekTo(to) },
                 )
                 Row {
-                    Text(durationLabel(position.toLong()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(durationLabel(position.toLong()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
-                    Text(durationLabel(length.toLong()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(durationLabel(length.toLong()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -660,24 +707,65 @@ private fun Player(playback: Playback) {
 
 @Composable
 private fun SummaryCard(summary: String?, working: Boolean, waiting: Boolean, canRegenerate: Boolean, onRegenerate: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 16.dp).animateContentSize()) {
+    val color = MaterialTheme.colorScheme.onSurface
+    var whole by rememberSaveable { mutableStateOf(false) }
+    var clipped by remember(summary) { mutableStateOf(false) }
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 14.dp).animateContentSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Summary", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                Text("In short", style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.weight(1f))
                 RegenerateButton(enabled = canRegenerate, onClick = onRegenerate)
             }
-            val color = MaterialTheme.colorScheme.onSecondaryContainer
             Crossfade(Triple(working, summary, waiting), label = "summary") { (busy, text, early) ->
+                val quiet = color.copy(alpha = 0.7f)
+                val inset = Modifier.padding(end = 14.dp)
                 when {
                     busy -> Thinking("Summarising on this phone…", color)
-                    text == "" -> Text("Too short to tell what it was about.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
-                    text != null -> Text(text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.padding(top = 8.dp, end = 12.dp))
-                    early -> Text("Comes once the transcript is ready.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
-                    else -> Text("Tap ↻ to summarise.", style = MaterialTheme.typography.bodyMedium, color = color.copy(alpha = 0.7f), modifier = Modifier.padding(top = 8.dp, end = 12.dp))
+                    text == "" -> Text("Too short to tell what it was about.", style = MaterialTheme.typography.bodyMedium, color = quiet, modifier = inset)
+                    text != null -> Column {
+                        Text(
+                            text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (whole) Int.MAX_VALUE else 4, overflow = TextOverflow.Ellipsis, modifier = inset,
+                            onTextLayout = { if (!whole) clipped = it.hasVisualOverflow },
+                        )
+                        if (clipped || whole) {
+                            Text(
+                                if (whole) "Show less" else "Show all", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 2.dp).clip(RoundedCornerShape(12.dp)).clickable { whole = !whole }.padding(vertical = 12.dp, horizontal = 2.dp),
+                            )
+                        }
+                    }
+                    early -> Text("Comes once the transcript is ready.", style = MaterialTheme.typography.bodyMedium, color = quiet, modifier = inset)
+                    else -> Text("Tap ↻ to summarise.", style = MaterialTheme.typography.bodyMedium, color = quiet, modifier = inset)
                 }
             }
+        }
+    }
+}
+
+/** the whole transcript to the clipboard, marked private so the phone doesn't preview a call on screen */
+@Composable
+private fun CopyButton(text: () -> String) {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_600)
+            copied = false
+        }
+    }
+    IconButton(onClick = {
+        val clip = ClipData.newPlainText("Call transcript", text())
+        clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        copied = true
+    }) {
+        AnimatedContent(copied, transitionSpec = { (fadeIn() + scaleIn()) togetherWith (fadeOut() + scaleOut()) }, label = "copy") {
+            Icon(if (it) Icons.Rounded.Check else Icons.Rounded.ContentCopy, if (it) "Copied" else "Copy the transcript")
         }
     }
 }
@@ -716,6 +804,37 @@ private fun TranscribeProgress(progress: Transcriber.Progress, onStop: (() -> Un
             if (onStop != null) {
                 TextButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onStop() }) { Text("Stop") }
             }
+        }
+    }
+}
+
+/** The clearer model stays one quiet line until you ask about it, or while it's working. */
+@Composable
+private fun ClearerOffer(
+    state: IndicModel.State,
+    written: Boolean,
+    busy: Boolean,
+    onMobileData: Boolean,
+    onDownload: () -> Unit,
+    onCancel: () -> Unit,
+    onWrite: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val underway = state is IndicModel.State.Downloading || state == IndicModel.State.Checking || state is IndicModel.State.Failed
+    if (asked || underway || written || busy) {
+        ClearerCard(state, written, busy, onMobileData, onDownload, onCancel, onWrite)
+    } else {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(16.dp))
+                .clickable { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); asked = true }
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Make this transcript clearer", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            Icon(Icons.Rounded.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -852,7 +971,7 @@ private fun rememberOnMobileData(): Boolean {
     return metered
 }
 
-/** a minute of the call as one paragraph; only the words it was unsure of are faded */
+/** a minute of the call as one paragraph, its time in the margin; only the words it was unsure of are faded */
 @Composable
 private fun SpokenMinute(minute: Minute, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
@@ -865,9 +984,14 @@ private fun SpokenMinute(minute: Minute, modifier: Modifier = Modifier) {
             }
         }
     }
-    Column(modifier.fillMaxWidth().animateContentSize().padding(horizontal = 8.dp, vertical = 8.dp)) {
-        Text(durationLabel(minute.atMs.toLong()), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-        Text(paragraph, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurface, modifier = Modifier.padding(top = 2.dp))
+    Row(modifier.fillMaxWidth().animateContentSize().padding(vertical = 4.dp)) {
+        Text(
+            durationLabel(minute.atMs.toLong()), style = MaterialTheme.typography.labelMedium, color = scheme.primary,
+            modifier = Modifier.width(48.dp).padding(top = 4.dp),
+        )
+        SelectionContainer(Modifier.weight(1f)) {
+            Text(paragraph, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurface)
+        }
     }
 }
 
@@ -890,4 +1014,14 @@ private fun durationLabel(ms: Long): String {
     return if (seconds >= 3_600) "%d:%02d:%02d".format(seconds / 3_600, seconds / 60 % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-private const val LATELY_OPEN = "lately_open"
+/** "2 min", the way you'd say how long a call was */
+private fun spokenLength(ms: Long): String {
+    val seconds = ms / 1_000
+    return when {
+        seconds < 60 -> "$seconds sec"
+        seconds < 3_600 -> "${(seconds + 30) / 60} min"
+        else -> "${seconds / 3_600} hr ${seconds / 60 % 60} min"
+    }
+}
+
+private const val LATELY_OPEN = "lately_full"

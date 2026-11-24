@@ -8,3 +8,7 @@
 
 # ONNX Runtime (clearer transcripts): its native code finds these Java classes by name
 -keep class ai.onnxruntime.** { *; }
+
+# Shizuku starts the shell service by its class name, in a process of its own
+-keep class io.github.jaswantk917.tring.recorder.ShellService { *; }
+-keep class io.github.jaswantk917.tring.recorder.IScreenShell** { *; }
