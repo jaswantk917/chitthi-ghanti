@@ -47,6 +47,7 @@ import io.github.jaswantk917.ghanti.data.SpecialCode
 import io.github.jaswantk917.ghanti.signals.DeliveryListener
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.signals.Signal
+import io.github.jaswantk917.ghanti.signals.StrangersRing
 import io.github.jaswantk917.ghanti.signals.Strength
 import io.github.jaswantk917.ghanti.ui.home.ExpectingSheet
 import io.github.jaswantk917.ghanti.ui.home.GhantiWelcome
@@ -202,6 +203,7 @@ class MainActivity : ComponentActivity() {
                 }
                 override fun setUsual(contactId: Long, number: String?) = app.prefs.setUsual(contactId, number)
                 override fun setRecord(numbers: List<String>, on: Boolean) = app.prefs.setRecord(numbers, on)
+                override fun hideFace(number: String, hidden: Boolean) = app.prefs.setFaceHidden(number, hidden)
                 override fun saveMemo(number: String, at: Long, label: String?, note: String) = app.memos.save(number, at, label, note)
                 override fun delete(row: RecentRow) {
                     lifecycleScope.launch(Dispatchers.IO) { runCatching { Recents.delete(this@MainActivity, row.group.entries.map { it.id }) } }
@@ -230,12 +232,14 @@ class MainActivity : ComponentActivity() {
 
         val usual by app.prefs.usual.collectAsState()
         val recordNumbers by app.prefs.recordNumbers.collectAsState()
+        val hiddenFaces by app.prefs.hiddenFaces.collectAsState()
+        val strangersRing by app.prefs.strangersRing.collectAsState()
         val hasRecorder = remember { Recorder.installed(this) }
         if (!setup.isPhoneApp) {
             GhantiWelcome(declined, onStart = { role.launch(getSystemService(RoleManager::class.java).createRequestRoleIntent(RoleManager.ROLE_DIALER)) })
             return
         }
-        HomeScreen(state, setup, expecting, usual, actions, recording = recordNumbers.takeIf { hasRecorder && settings.autoRecord == AutoRecord.Chosen })
+        HomeScreen(state, setup, expecting, usual, actions, recording = recordNumbers.takeIf { hasRecorder && settings.autoRecord == AutoRecord.Chosen }, hiddenFaces = hiddenFaces, strangersRingUntil = strangersRing.until)
 
         keypad?.let { initial ->
             KeypadSheet(
@@ -262,6 +266,8 @@ class MainActivity : ComponentActivity() {
         if (expectingOpen) {
             ExpectingSheet(
                 expecting, setup,
+                strangers = strangersRing,
+                onStrangersRing = { hours -> if (hours == null) StrangersRing.stop(this@MainActivity) else StrangersRing.start(this@MainActivity, hours) },
                 onAllowNotifications = ::openListenerSettings,
                 // as if the app had said it arrived: a later update of that brand brings it back
                 onClear = { brand -> app.signals.record(Signal(brand, Strength.Done, System.currentTimeMillis())) },

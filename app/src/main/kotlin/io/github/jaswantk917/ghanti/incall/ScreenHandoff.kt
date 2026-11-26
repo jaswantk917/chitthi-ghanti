@@ -49,6 +49,22 @@ internal object ScreenHandoff {
         }
     }
 
+    /**
+     * tells the recorder what Tring knows of a stranger: the likely label ("Swiggy delivery?") as the call
+     * comes in, or the one you confirmed; it names their recordings and messages by it. An older recorder ignores this.
+     */
+    fun describe(context: Context, number: String, label: String, confirmed: Boolean) {
+        if (number.isBlank() || label.isBlank() || !Recorder.installed(context)) return
+        try {
+            context.contentResolver.call(
+                Uri.parse("content://${Recorder.PACKAGE}.recordings"), "describe", number,
+                Bundle().apply { putString("label", label); putBoolean("confirmed", confirmed) },
+            )
+        } catch (e: Exception) {
+            Log.w("ScreenHandoff", "the recorder didn't hear who called", e)
+        }
+    }
+
     fun claim(call: Call): Boolean {
         val mine = offer ?: return false
         if (!matches(mine.number, call.details.handle?.schemeSpecificPart.orEmpty(), System.currentTimeMillis() - mine.at)) return false

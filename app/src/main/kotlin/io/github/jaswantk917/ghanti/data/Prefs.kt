@@ -54,6 +54,31 @@ class Prefs(context: Context) {
         recordState.value = next
     }
 
+    /** the last 10 digits of each number you said not to suggest above Recents */
+    private val hiddenFacePrefs = context.getSharedPreferences("ghanti_hidden_faces", Context.MODE_PRIVATE)
+    private val hiddenFaceState = MutableStateFlow(hiddenFacePrefs.getStringSet("numbers", null).orEmpty().toSet())
+    val hiddenFaces: StateFlow<Set<String>> = hiddenFaceState
+
+    fun setFaceHidden(number: String, hidden: Boolean) {
+        val key = DeliveryRules.last10(number)
+        val next = if (hidden) hiddenFaceState.value + key else hiddenFaceState.value - key
+        hiddenFacePrefs.edit().putStringSet("numbers", next).apply()
+        hiddenFaceState.value = next
+    }
+
+    /** "expecting a new number": strangers ring out loud until [until]; [hours] is the length you picked */
+    data class StrangersRing(val until: Long = 0L, val hours: Int = 0) {
+        fun on(now: Long) = until > now
+    }
+
+    private val strangersState = MutableStateFlow(StrangersRing(prefs.getLong("strangers_ring_until", 0L), prefs.getInt("strangers_ring_hours", 0)))
+    val strangersRing: StateFlow<StrangersRing> = strangersState
+
+    fun setStrangersRing(next: StrangersRing) {
+        prefs.edit().putLong("strangers_ring_until", next.until).putInt("strangers_ring_hours", next.hours).apply()
+        strangersState.value = next
+    }
+
     fun setUsual(contactId: Long, number: String?) {
         usualPrefs.edit().apply { if (number == null) remove(contactId.toString()) else putString(contactId.toString(), number) }.apply()
         usualState.value = if (number == null) usualState.value - contactId else usualState.value + (contactId to number)

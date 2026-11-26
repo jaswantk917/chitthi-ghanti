@@ -9,6 +9,8 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.PowerManager
+import android.telecom.Call
 import android.telecom.InCallService
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,11 +19,13 @@ import androidx.core.app.Person
 import androidx.core.app.ServiceCompat
 import androidx.core.graphics.drawable.IconCompat
 import io.github.jaswantk917.chitthi.R
+import io.github.jaswantk917.ghanti.signals.StrangersRing
 
 object CallNotifications {
     private const val TAG = "CallNotifications"
     private const val CH_RINGING = "ringing"
     private const val CH_QUIET = "ringing_quiet"
+    private const val CH_QUIET_POPUP = "ringing_quiet_popup"
     private const val CH_ONGOING = "ongoing"
     const val CH_MISSED = "missed"
     const val CH_SILENCED = "silenced"
@@ -33,6 +37,16 @@ object CallNotifications {
 
     internal fun idFor(phase: Phase) = if (phase == Phase.Ringing) ID_RINGING else ID_CALL
 
+    // whether each silenced call pops up, fixed when it starts ringing: the screen turning on later doesn't re-alert it
+    private val popup = java.util.WeakHashMap<Call, Boolean>()
+
+    /** a silenced call pops up only while you're using the phone; with the screen off it waits quietly in the shade */
+    internal fun ringingChannel(silenced: Boolean, screened: Boolean, screenOn: Boolean) = when {
+        screened -> CH_QUIET
+        silenced -> if (screenOn) CH_QUIET_POPUP else CH_QUIET
+        else -> CH_RINGING
+    }
+
     fun createChannels(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannels(
             listOf(
@@ -41,7 +55,12 @@ object CallNotifications {
                     setSound(null, null); enableVibration(false)
                 },
                 NotificationChannel(CH_QUIET, "Silenced calls ringing", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Strangers calling while silenced: shown quietly, with Answer"
+                    description = "Strangers calling while silenced, with the screen off: shown quietly, with Answer"
+                },
+                // pops up without a sound and slides away by itself: no full-screen intent keeps it pinned
+                NotificationChannel(CH_QUIET_POPUP, "Silenced calls, screen on", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Strangers calling while silenced and you're using the phone: a silent pop-up, with Answer"
+                    setSound(null, null); enableVibration(false)
                 },
                 NotificationChannel(CH_ONGOING, "Ongoing calls", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     setSound(null, null); enableVibration(false)
@@ -49,6 +68,9 @@ object CallNotifications {
                 NotificationChannel(CH_MISSED, "Missed calls", NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(CH_SILENCED, "Silenced calls", NotificationManager.IMPORTANCE_LOW).apply {
                     description = "Strangers who called while silenced"
+                },
+                NotificationChannel(StrangersRing.CHANNEL, "Expecting a new number", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "When strangers go back to ringing silently, and whether to stop once a new number has called"
                 },
                 NotificationChannel(MissedCallReminder.CHANNEL, "Missed-call reminders", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "A missed call you swiped away, an hour later, unless you called back or opened Ghanti"
@@ -105,7 +127,8 @@ object CallNotifications {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             // a handed-back call: Tring rings it itself and the recorder's screen is already up
-            builder.setChannelId(if (call.silenced || call.screened) CH_QUIET else CH_RINGING)
+            val screenOn = popup.getOrPut(call.call) { context.getSystemService(PowerManager::class.java).isInteractive }
+            builder.setChannelId(ringingChannel(call.silenced, call.screened, screenOn))
                 .setStyle(NotificationCompat.CallStyle.forIncomingCall(person, action(context, CallActionReceiver.DECLINE), answer))
                 .setContentText(call.outcome?.guess?.title ?: if (call.silenced) "Ringing silently · not in your contacts" else null)
             if (!call.silenced && !call.screened) builder.setFullScreenIntent(open, true)

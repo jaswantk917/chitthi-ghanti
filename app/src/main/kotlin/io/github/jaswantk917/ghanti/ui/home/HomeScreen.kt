@@ -69,14 +69,22 @@ import androidx.compose.material.icons.rounded.Dialpad
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PersonAdd
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
@@ -136,6 +144,7 @@ import io.github.jaswantk917.ghanti.data.RecentRow
 import io.github.jaswantk917.ghanti.data.Suggested
 import io.github.jaswantk917.ghanti.data.Suggestions
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
+import io.github.jaswantk917.ghanti.signals.StrangersRing
 import io.github.jaswantk917.ghanti.signals.Signal
 import io.github.jaswantk917.ghanti.signals.Strength
 import io.github.jaswantk917.ghanti.ui.components.Avatar
@@ -175,6 +184,8 @@ interface HomeActions {
     fun allowNotifications()
     fun allowFullScreen()
     fun recentsSeen()
+    /** stop offering this number above Recents, or offer it again */
+    fun hideFace(number: String, hidden: Boolean) {}
 }
 
 /** [screensCalls]: Android asks the "Caller ID & spam app" whether a call rings, a separate role from the phone app */
@@ -186,9 +197,10 @@ private val tabs = listOf("Recents", "Contacts")
 
 @Composable
 /** [recording]: the numbers whose calls record by themselves, or null when you don't pick people */
-fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: Map<Long, String>, actions: HomeActions, recording: Set<String>? = null) {
+fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: Map<Long, String>, actions: HomeActions, recording: Set<String>? = null, hiddenFaces: Set<String> = emptySet(), strangersRingUntil: Long = 0L) {
     val pager = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
     val haptics = rememberHaptics()
     val density = LocalDensity.current
     var headerHeight by remember { mutableStateOf(150.dp) }
@@ -284,7 +296,14 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
             ) { page ->
                 val padding = PaddingValues(top = headerHeight + 4.dp, bottom = navBottom + 112.dp)
                 if (page == 0) {
-                    RecentsPage(state.recents, state.contacts, usual, setup, recentsList, padding, actions)
+                    RecentsPage(state.recents, state.contacts, usual, hiddenFaces, setup, recentsList, padding, actions) { person ->
+                        actions.hideFace(person.number, true)
+                        scope.launch {
+                            snackbar.currentSnackbarData?.dismiss()
+                            val result = snackbar.showSnackbar("${person.name ?: person.number} won't be suggested", actionLabel = "Undo", duration = SnackbarDuration.Long)
+                            if (result == SnackbarResult.ActionPerformed) actions.hideFace(person.number, false)
+                        }
+                    }
                 } else {
                     val searchDp = with(density) { searchHeight.toDp() }
                     ContactsPage(state.contacts, query, usual, contactsList, PaddingValues(top = headerHeight + searchDp - 8.dp, bottom = navBottom + 112.dp), actions, recording)
@@ -311,6 +330,7 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
             selected = pager.currentPage,
             setup = setup,
             expecting = expecting,
+            strangersRingUntil = strangersRingUntil,
             onSelect = { scope.launch { pager.animateScrollToPage(it) } },
             actions = actions,
             collapse = { collapse },
@@ -334,6 +354,7 @@ fun HomeScreen(state: HomeState, setup: Setup, expecting: List<Signal>, usual: M
             text = { Text("Keypad") },
             modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(20.dp),
         )
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp))
     }
 }
 
@@ -342,6 +363,7 @@ private fun Header(
     selected: Int,
     setup: Setup,
     expecting: List<Signal>,
+    strangersRingUntil: Long,
     onSelect: (Int) -> Unit,
     actions: HomeActions,
     collapse: () -> Float,
@@ -378,7 +400,7 @@ private fun Header(
         ) {
             Column(Modifier.weight(1f)) {
                 Text("Ghanti", style = MaterialTheme.typography.displaySmallEmphasized)
-                StatusLine(setup, expecting, onClick = {
+                StatusLine(setup, expecting, strangersRingUntil, onClick = {
                     haptics.play(Haptic.Tap)
                     if (setup.ready) actions.expecting() else actions.makeDefault()
                 })
@@ -403,7 +425,7 @@ private fun Header(
 
 /** one line that says what Ghanti will do with the next stranger's call; tapping it explains why */
 @Composable
-private fun StatusLine(setup: Setup, expecting: List<Signal>, onClick: () -> Unit) {
+private fun StatusLine(setup: Setup, expecting: List<Signal>, strangersRingUntil: Long, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     fun names(list: List<Signal>) = list.sortedByDescending { it.at }.map { if (it.brand == DeliveryRules.DELIVERY) "A delivery" else it.brand }.distinct().joinToString(", ")
     val live = expecting.filter { it.strength == Strength.Live }
@@ -411,6 +433,8 @@ private fun StatusLine(setup: Setup, expecting: List<Signal>, onClick: () -> Uni
         !setup.isPhoneApp -> Triple(Icons.Rounded.Call, "Tap to make Ghanti your phone app", scheme.primary)
         !setup.screensCalls -> Triple(Icons.Rounded.NotificationsOff, "Tap to let Ghanti silence strangers", scheme.primary)
         !setup.silencing -> Triple(Icons.Rounded.NotificationsActive, "Everyone rings", scheme.onSurfaceVariant)
+        strangersRingUntil > System.currentTimeMillis() ->
+            Triple(Icons.Rounded.NotificationsActive, StrangersRing.status(strangersRingUntil, System.currentTimeMillis()), scheme.tertiary)
         live.isNotEmpty() -> Triple(Icons.Rounded.DeliveryDining, "${names(live)} on the way · strangers ring", scheme.tertiary)
         expecting.isNotEmpty() -> Triple(Icons.Rounded.DeliveryDining, "${names(expecting)} due today · strangers ring", scheme.tertiary)
         else -> Triple(Icons.Rounded.NotificationsOff, "Strangers ring silently", scheme.onSurfaceVariant)
@@ -432,10 +456,12 @@ private fun RecentsPage(
     recents: List<RecentRow>,
     contacts: List<Contact>,
     usual: Map<Long, String>,
+    hiddenFaces: Set<String>,
     setup: Setup,
     list: androidx.compose.foundation.lazy.LazyListState,
     padding: PaddingValues,
     actions: HomeActions,
+    onHideFace: (Suggested) -> Unit,
 ) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var memoFor by remember { mutableStateOf<RecentRow?>(null) }
@@ -462,9 +488,9 @@ private fun RecentsPage(
             info.visibleItemsInfo.filter { it.offset + it.size / 2 < end }.mapNotNullTo(HashSet()) { item -> numberOf[item.key]?.takeIf { it.isNotEmpty() } }
         }.filterNotNull().first()
     }
-    val anyone = remember(contacts, recents, usual) { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis()).isNotEmpty() }
-    val suggested = remember(contacts, recents, usual, shown) {
-        shown?.let { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis(), it) }.orEmpty()
+    val anyone = remember(contacts, recents, usual, hiddenFaces) { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis(), hidden = hiddenFaces).isNotEmpty() }
+    val suggested = remember(contacts, recents, usual, shown, hiddenFaces) {
+        shown?.let { Suggestions.pick(contacts, recents, usual, System.currentTimeMillis(), it, hidden = hiddenFaces) }.orEmpty()
     }
     // the faces leaving still show who they were while they fade
     var lastSuggested by remember { mutableStateOf(suggested) }
@@ -518,10 +544,15 @@ private fun RecentsPage(
                     Box(Modifier.fillMaxWidth().height(facesHeight)) {
                         AnimatedVisibility(suggested.isNotEmpty(), enter = fadeIn() + scaleIn(initialScale = 0.92f), exit = fadeOut()) {
                             AnimatedContent(lastSuggested, contentKey = { people -> people.map { it.number } }, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "faces") { people ->
-                                Faces(people) { person ->
-                                    haptics.play(Haptic.Send)
-                                    actions.call(person.number)
-                                }
+                                Faces(
+                                    people,
+                                    onCall = { person ->
+                                        haptics.play(Haptic.Send)
+                                        actions.call(person.number)
+                                    },
+                                    onInfo = { person -> person.contactId?.let(actions::openContact) ?: actions.addContact(person.number) },
+                                    onHide = onHideFace,
+                                )
                             }
                         }
                     }
@@ -562,30 +593,54 @@ private const val FACES_KEY = "faces"
 // the row's and each face's padding, the avatar and the gap under it; the name's line comes on top
 private val FACES_FIXED = 12.dp + 16.dp + 56.dp + 6.dp
 
-/** people you might call now, above Recents; a tap rings them */
+/** people you might call now, above Recents; a tap rings them, a long press offers who they are or to stop suggesting them */
 @Composable
-private fun Faces(people: List<Suggested>, modifier: Modifier = Modifier, onCall: (Suggested) -> Unit) {
+private fun Faces(people: List<Suggested>, modifier: Modifier = Modifier, onCall: (Suggested) -> Unit, onInfo: (Suggested) -> Unit, onHide: (Suggested) -> Unit) {
+    val haptics = rememberHaptics()
+    var menuFor by remember { mutableStateOf<String?>(null) }
     Row(modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
         people.forEach { person ->
             key(person.number) {
                 val interaction = remember { MutableInteractionSource() }
-                Column(
-                    Modifier
-                        .width(104.dp)
-                        .pressScale(interaction, 0.92f)
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable(interactionSource = interaction, indication = null, onClickLabel = "Call") { onCall(person) }
-                        .padding(horizontal = 4.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Avatar(person.name, person.photo, person.number, size = 56.dp)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        person.name ?: person.number,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = if (person.name == null) TextOverflow.StartEllipsis else TextOverflow.Ellipsis,
-                    )
+                Box {
+                    Column(
+                        Modifier
+                            .width(104.dp)
+                            .pressScale(interaction, 0.92f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .combinedClickable(
+                                interactionSource = interaction,
+                                indication = null,
+                                onClickLabel = "Call",
+                                onLongClickLabel = "More",
+                                onLongClick = { haptics.play(Haptic.Hold); menuFor = person.number },
+                                onClick = { onCall(person) },
+                            )
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Avatar(person.name, person.photo, person.number, size = 56.dp)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            person.name ?: person.number,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = if (person.name == null) TextOverflow.StartEllipsis else TextOverflow.Ellipsis,
+                        )
+                    }
+                    DropdownMenu(expanded = menuFor == person.number, onDismissRequest = { menuFor = null }, shape = RoundedCornerShape(16.dp)) {
+                        val saved = person.contactId != null
+                        DropdownMenuItem(
+                            text = { Text(if (saved) "Contact info" else "Add to contacts") },
+                            leadingIcon = { Icon(if (saved) Icons.Rounded.Person else Icons.Rounded.PersonAdd, null) },
+                            onClick = { haptics.play(Haptic.Tap); menuFor = null; onInfo(person) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Don't suggest") },
+                            leadingIcon = { Icon(Icons.Rounded.VisibilityOff, null) },
+                            onClick = { haptics.play(Haptic.Tap); menuFor = null; onHide(person) },
+                        )
+                    }
                 }
             }
         }

@@ -841,7 +841,7 @@ private fun Controls(
                 ) {
                     when (recording) {
                         Recorder.State.NeedsSetup -> { haptics.play(Haptic.Tap); Recorder.openSetup(context) }
-                        Recorder.State.Off -> { haptics.play(Haptic.ToggleOn); Recorder.record(context, call.title) }
+                        Recorder.State.Off -> { haptics.play(Haptic.ToggleOn); Recorder.record(context, call.title, call.number, call.person != null) }
                         else -> { haptics.play(Haptic.ToggleOff); Recorder.stop(context) }
                     }
                 }

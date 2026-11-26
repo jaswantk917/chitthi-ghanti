@@ -168,4 +168,22 @@ class DeliveryRulesTest {
         assertEquals("Uber driver?", Guess("Maybe Uber driver").brief)
         assertEquals("Bistro delivery", Guess("Bistro delivery", confident = true).brief)
     }
+
+    @Test
+    fun `expecting a new number lets strangers ring until the time you picked`() {
+        val until = t(15)
+        val now = DeliveryRules.decide(stranger, false, emptyList(), null, t(13), settings, zone, strangersRingUntil = until)
+        assertTrue(now.ring)
+        assertTrue("it rang only because of the window", now.expected)
+        assertFalse(DeliveryRules.decide(stranger, false, emptyList(), null, t(15), settings, zone, strangersRingUntil = until).ring)
+    }
+
+    @Test
+    fun `a delivery or a contact during the window rang for its own reason`() {
+        val until = t(15)
+        val rider = DeliveryRules.decide(stranger, false, listOf(Signal("Bistro", Strength.Live, t(13))), null, t(13, 5), settings, zone, strangersRingUntil = until)
+        assertTrue(rider.ring)
+        assertFalse(rider.expected)
+        assertFalse(DeliveryRules.decide(stranger, true, emptyList(), null, t(13), settings, zone, strangersRingUntil = until).expected)
+    }
 }

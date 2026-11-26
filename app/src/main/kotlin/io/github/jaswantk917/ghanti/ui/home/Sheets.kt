@@ -7,6 +7,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.remember
 import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.data.Prefs
+import io.github.jaswantk917.ghanti.signals.StrangersRing
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.PaddingValues
 import io.github.jaswantk917.ghanti.incall.Recorder
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -204,12 +209,22 @@ private fun Section(icon: ImageVector, title: String, line: String, trailing: @C
 
 /** what's on its way, and so who gets to ring; swipe one away once it's here */
 @Composable
-fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: () -> Unit, onClear: (brand: String) -> Unit, onDismiss: () -> Unit) {
+fun ExpectingSheet(
+    expecting: List<Signal>,
+    setup: Setup,
+    strangers: Prefs.StrangersRing,
+    onStrangersRing: (hours: Int?) -> Unit,
+    onAllowNotifications: () -> Unit,
+    onClear: (brand: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val haptics = rememberHaptics()
     val scheme = MaterialTheme.colorScheme
     val byBrand = expecting.sortedByDescending { it.at }.distinctBy { it.brand }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 24.dp).animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())) {
+            NewNumber(strangers, onStrangersRing)
+            Spacer(Modifier.height(28.dp))
             Text(
                 if (byBrand.isEmpty()) "Nothing on its way" else "On its way",
                 style = MaterialTheme.typography.headlineMediumEmphasized,
@@ -235,6 +250,42 @@ fun ExpectingSheet(expecting: List<Signal>, setup: Setup, onAllowNotifications: 
                 TextButton(onClick = { haptics.play(Haptic.Tap); onAllowNotifications() }) { Text("Let Ghanti see delivery notifications") }
             }
         }
+    }
+}
+
+/** "Expecting a new number?": one tap lets strangers ring for a while; the same tap again stops it */
+@Composable
+private fun NewNumber(strangers: Prefs.StrangersRing, onRing: (hours: Int?) -> Unit) {
+    val haptics = rememberHaptics()
+    val now = System.currentTimeMillis()
+    val on = strangers.on(now)
+    Text("Expecting a new number?", style = MaterialTheme.typography.headlineMediumEmphasized)
+    Spacer(Modifier.height(6.dp))
+    AnimatedContent(if (on) "Strangers ring out loud ${StrangersRing.until(strangers.until, now)}." else "Let strangers ring out loud for a while.", label = "new number") { line ->
+        Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
+        StrangersRing.choices.forEachIndexed { i, (hours, label) ->
+            val picked = on && strangers.hours == hours
+            ToggleButton(
+                checked = picked,
+                onCheckedChange = { checked ->
+                    haptics.play(if (checked) Haptic.ToggleOn else Haptic.ToggleOff)
+                    onRing(if (checked) hours else null)
+                },
+                shapes = when (i) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    StrangersRing.choices.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                contentPadding = PaddingValues(horizontal = 4.dp),
+                modifier = Modifier.weight(1f),
+            ) { Text(label, maxLines = 1) }
+        }
+    }
+    AnimatedVisibility(on) {
+        TextButton(onClick = { haptics.play(Haptic.ToggleOff); onRing(null) }, modifier = Modifier.padding(top = 4.dp)) { Text("Stop, silence strangers") }
     }
 }
 

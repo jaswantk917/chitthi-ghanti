@@ -54,9 +54,12 @@ internal object Recorder {
         runCatching { context.unregisterReceiver(replies) }
     }
 
-    fun record(context: Context, who: String) {
+    /** [number] and [saved] let the recorder show a stranger by what Tring knows of them, now and after you confirm it */
+    fun record(context: Context, who: String, number: String = "", saved: Boolean = true) {
         _state.value = State.Starting
-        context.sendBroadcast(Intent(ACTION_RECORD).setPackage(PACKAGE).putExtra("on", true).putExtra("who", who))
+        context.sendBroadcast(
+            Intent(ACTION_RECORD).setPackage(PACKAGE).putExtra("on", true).putExtra("who", who).putExtra("number", number).putExtra("saved", saved),
+        )
         handler.postDelayed(noReply, REPLY_MS)
     }
 

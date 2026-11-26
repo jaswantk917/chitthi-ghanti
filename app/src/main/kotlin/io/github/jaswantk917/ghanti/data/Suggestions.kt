@@ -8,13 +8,13 @@ import java.time.ZonedDateTime
 import kotlin.math.abs
 
 /** Someone Recents offers to call, above its list. */
-data class Suggested(val name: String?, val number: String, val photo: Uri?)
+data class Suggested(val name: String?, val number: String, val photo: Uri?, val contactId: Long? = null)
 
 /**
  * Who you're likely to call right now: someone you usually talk to at this hour, then a favourite,
  * then whoever you talked to last. A stranger who only ever called you is never offered, nor is
- * anyone Recents already shows on its first screen. Three people or nobody: a strip of one or two
- * looks unfinished.
+ * anyone Recents already shows on its first screen or you asked not to see here. Three people or
+ * nobody: a strip of one or two looks unfinished.
  */
 object Suggestions {
     private const val MOST = 3
@@ -24,11 +24,11 @@ object Suggestions {
     private const val RECENT_DAYS = 30L
     private const val DAY_MS = 24 * 60 * 60_000L
 
-    private class Person(val key: String, val name: String?, val number: String, val photo: Uri?, val numbers: Set<String>, val calls: List<CallEntry>, val starred: Boolean) {
+    private class Person(val key: String, val name: String?, val number: String, val photo: Uri?, val numbers: Set<String>, val calls: List<CallEntry>, val starred: Boolean, val contactId: Long? = null) {
         val talks = calls.filter { it.kind == Kind.Outgoing || it.kind == Kind.Incoming && it.durationSec > 0 }
     }
 
-    /** [shown]: the numbers (last 10 digits) of the rows Recents shows without scrolling */
+    /** [shown]: the numbers (last 10 digits) of the rows Recents shows without scrolling; [hidden]: numbers you said not to suggest */
     fun pick(
         contacts: List<Contact>,
         recents: List<RecentRow>,
@@ -36,6 +36,7 @@ object Suggestions {
         now: Long,
         shown: Set<String> = emptySet(),
         zone: ZoneId = ZoneId.systemDefault(),
+        hidden: Set<String> = emptySet(),
     ): List<Suggested> {
         val calls = recents.flatMap { it.group.entries }.groupBy { DeliveryRules.last10(it.number) }
         val saved = HashSet<String>()
@@ -46,7 +47,7 @@ object Suggestions {
                 ?: c.numbers.maxByOrNull { T9.affinity(false, calls[DeliveryRules.last10(it.number)].orEmpty(), now) }?.number
                 ?: return@mapNotNull null
             val theirs = numbers.flatMap { calls[it].orEmpty() }.sortedByDescending { it.date }
-            Person("c${c.id}", c.name, number, c.photo, numbers, theirs, c.starred)
+            Person("c${c.id}", c.name, number, c.photo, numbers, theirs, c.starred, c.id)
         } + recents.distinctBy { DeliveryRules.last10(it.group.number) }.mapNotNull { row ->
             val last = DeliveryRules.last10(row.group.number)
             val theirs = calls[last].orEmpty()
@@ -55,7 +56,7 @@ object Suggestions {
             if (last.length < 10 || last in saved || !dialled || flagged) null
             else Person(last, row.label ?: row.name, row.group.number, null, setOf(last), theirs, false)
         }
-        val offered = people.filter { p -> p.numbers.none { it in shown } }
+        val offered = people.filter { p -> p.numbers.none { it in shown || it in hidden } }
 
         val moment = Instant.ofEpochMilli(now).atZone(zone)
         val usuallyNow = offered
@@ -70,7 +71,7 @@ object Suggestions {
 
         val chosen = LinkedHashMap<String, Suggested>()
         fun add(person: Person?) {
-            if (person != null && person.key !in chosen && chosen.size < MOST) chosen[person.key] = Suggested(person.name, person.number, person.photo)
+            if (person != null && person.key !in chosen && chosen.size < MOST) chosen[person.key] = Suggested(person.name, person.number, person.photo, person.contactId)
         }
         // one of each kind first, so three favourites never crowd out the person you call every evening
         add(usuallyNow.firstOrNull())

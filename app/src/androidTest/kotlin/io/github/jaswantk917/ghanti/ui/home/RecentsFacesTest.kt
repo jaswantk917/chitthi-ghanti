@@ -6,6 +6,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
@@ -76,7 +81,7 @@ class RecentsFacesTest {
     // each face's text is its avatar's letter, then the name
     private fun faces() = rule.onAllNodes(isFace).fetchSemanticsNodes().map { it.config[SemanticsProperties.Text].last().text }
 
-    private fun show(fontScale: Float, rows: List<RecentRow> = recents) {
+    private fun show(fontScale: Float, rows: List<RecentRow> = recents, actions: HomeActions = NoActions, hidden: () -> Set<String> = { emptySet() }) {
         rule.runOnUiThread {
             // the phone may lock mid-run; the test screen shows over it and keeps the screen on while it's up
             rule.activity.setShowWhenLocked(true)
@@ -89,7 +94,7 @@ class RecentsFacesTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 GhantiTheme(amoled = false) {
                     Box(Modifier.requiredWidth(360.dp)) {
-                        HomeScreen(HomeState(loaded = true, recents = rows, contacts = listOf(mummy, asha, ravi) + others + kavya), Setup(true, true, true, false), emptyList(), emptyMap(), NoActions)
+                        HomeScreen(HomeState(loaded = true, recents = rows, contacts = listOf(mummy, asha, ravi) + others + kavya), Setup(true, true, true, false), emptyList(), emptyMap(), actions, hiddenFaces = hidden())
                     }
                 }
             }
@@ -176,6 +181,49 @@ class RecentsFacesTest {
         rule.onNodeWithText("Contacts").performClick()
         settle()
         page("header-over-contacts")
+    }
+
+    /** a long press on a face: who they are, or stop suggesting them, with a way back */
+    @Test
+    fun aLongPressOpensTheContactOrHidesThem() {
+        var hiddenNumbers by mutableStateOf(emptySet<String>())
+        var opened: Long? = null
+        val actions = object : HomeActions by NoActions {
+            override fun openContact(id: Long) { opened = id }
+            override fun hideFace(number: String, hidden: Boolean) {
+                val key = number.takeLast(10)
+                hiddenNumbers = if (hidden) hiddenNumbers + key else hiddenNumbers - key
+            }
+        }
+        show(1.0f, actions = actions, hidden = { hiddenNumbers })
+        settle()
+        val first = faces()
+        assertEquals("three faces to start with: $first", 3, first.size)
+        val target = first.first()
+        fun face(name: String) = rule.onAllNodes(isFace and hasText(name, substring = true)).onFirst()
+
+        face(target).performTouchInput { longClick() }
+        settle()
+        rule.onNodeWithText("Contact info").assertIsDisplayed()
+        rule.onNodeWithText("Don't suggest").assertIsDisplayed()
+        snap("recents-faces-menu")
+        rule.onNodeWithText("Contact info").performClick()
+        settle()
+        val id = listOf(mummy, asha, ravi, kavya).plus(others).first { it.name == target }.id
+        assertEquals("Contact info opens that contact", id, opened)
+
+        face(target).performTouchInput { longClick() }
+        settle()
+        rule.onNodeWithText("Don't suggest").performClick()
+        settle()
+        val after = faces()
+        assertFalse("$target is no longer offered: $after", target in after)
+        assertTrue("three faces or none: $after", after.size == 3 || after.isEmpty())
+        rule.onNodeWithText("$target won't be suggested").assertIsDisplayed()
+        snap("recents-faces-hidden")
+        rule.onNodeWithText("Undo").performClick()
+        settle()
+        assertTrue("Undo brings $target back: ${faces()}", target in faces())
     }
 
     @Test

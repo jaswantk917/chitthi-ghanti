@@ -18,8 +18,8 @@ class SuggestionsTest {
     }
     private fun person(id: Long, name: String, number: String, starred: Boolean = false) =
         Contact(id, name, null, starred, listOf(PhoneNumber(number, "Mobile")))
-    private fun pick(contacts: List<Contact>, recents: List<RecentRow>, usual: Map<Long, String> = emptyMap(), shown: Set<String> = emptySet(), at: Long = now) =
-        Suggestions.pick(contacts, recents, usual, at, shown, zone)
+    private fun pick(contacts: List<Contact>, recents: List<RecentRow>, usual: Map<Long, String> = emptyMap(), shown: Set<String> = emptySet(), at: Long = now, hidden: Set<String> = emptySet()) =
+        Suggestions.pick(contacts, recents, usual, at, shown, zone, hidden)
 
     private val maa = person(1, "Maa", "9000000001")
     private val didi = person(2, "Didi", "9000000002", starred = true)
@@ -118,6 +118,30 @@ class SuggestionsTest {
         val picked = pick(listOf(two, didi, ravi), recents, mapOf(1L to "9000000005"))
         assertEquals(listOf("9000000005"), picked.filter { it.name == "Papa" }.map { it.number })
         assertEquals(3, picked.size)
+    }
+
+    @Test
+    fun `someone you said not to suggest gives way to the next person`() {
+        assertEquals(listOf("Didi", "Ravi", "Asha"), pick(listOf(maa, didi, ravi, asha), evenings, hidden = setOf("9000000001")).map { it.name })
+    }
+
+    @Test
+    fun `hiding one of a contact's numbers hides the contact`() {
+        val papa = Contact(5, "Papa", null, true, listOf(PhoneNumber("9000000005", "Home"), PhoneNumber("9000000006", "Work")))
+        val names = pick(listOf(papa, maa, didi, ravi, asha), evenings, hidden = setOf("9000000006", "9000000001")).map { it.name }
+        assertEquals(listOf("Didi", "Ravi", "Asha"), names)
+    }
+
+    @Test
+    fun `hiding leaves too few, and then nobody is offered`() {
+        assertTrue(pick(listOf(maa, didi, ravi), evenings, hidden = setOf("9000000002")).isEmpty())
+    }
+
+    @Test
+    fun `a saved person carries their contact, an unsaved number doesn't`() {
+        val recents = rows(call("9111111111", Kind.Outgoing, t(23, 10)), call("9000000003", Kind.Outgoing, t(22, 10)))
+        val picked = pick(listOf(didi, ravi), recents).associate { it.number to it.contactId }
+        assertEquals(mapOf("9000000002" to 2L, "9111111111" to null, "9000000003" to 3L), picked)
     }
 
     @Test

@@ -9,6 +9,7 @@ import android.telecom.CallAudioState
 import android.telecom.InCallService
 import io.github.jaswantk917.ghanti.GhantiApp
 import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.signals.StrangersRing
 
 /** Telecom's line into Ghanti: every call on the phone passes through here while Ghanti is the phone app. */
 class GhantiInCallService : InCallService() {
@@ -76,6 +77,7 @@ class GhantiInCallService : InCallService() {
     }
 
     override fun onCallRemoved(call: Call) {
+        StrangersRing.callEnded(this, call.details.handle?.schemeSpecificPart.orEmpty())
         RingThrough.stop(this, call)
         call.unregisterCallback(callback)
         ScreenHandoff.forget(call)
@@ -91,7 +93,7 @@ class GhantiInCallService : InCallService() {
         val mode = prefs.settings.value.autoRecord
         if (mode == AutoRecord.Off || !Recorder.installed(this)) return
         val ui = Calls.calls.value.firstOrNull { it.call == call } ?: return
-        if (mode.wants(ui.number, ui.person != null, prefs.recordNumbers.value)) Recorder.record(this, ui.title)
+        if (mode.wants(ui.number, ui.person != null, prefs.recordNumbers.value)) Recorder.record(this, ui.title, ui.number, ui.person != null)
     }
 
     override fun onSilenceRinger() = RingThrough.stop(this)

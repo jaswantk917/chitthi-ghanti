@@ -278,5 +278,9 @@
         <receiver
             android:name="io.github.jaswantk917.ghanti.incall.MissedCallReminder$Dismissed"
             android:exported="false" />
+        <!-- the note after a new number rang while you were expecting one: silence strangers again, or keep going -->
+        <receiver
+            android:name="io.github.jaswantk917.ghanti.signals.StrangersRing$Action"
+            android:exported="false" />
     </application>
 </manifest>

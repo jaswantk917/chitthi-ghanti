@@ -1,6 +1,7 @@
 package io.github.jaswantk917.ghanti.data
 
 import android.content.Context
+import io.github.jaswantk917.ghanti.incall.ScreenHandoff
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,7 @@ object MemoList {
 }
 
 class Memos(context: Context) {
+    private val app = context.applicationContext
     private val prefs = context.getSharedPreferences("ghanti_memos", Context.MODE_PRIVATE)
     private val state = MutableStateFlow(load())
     val all: StateFlow<List<Memo>> = state
@@ -46,6 +48,8 @@ class Memos(context: Context) {
     fun save(number: String, at: Long, label: String?, note: String) {
         state.update { MemoList.save(it, number, at, label, note).sortedBy { m -> m.at }.takeLast(MAX) }
         prefs.edit().putStringSet(KEY, state.value.map { listOf(it.number, it.at, it.label.orEmpty(), it.note).joinToString(SEP) }.toSet()).apply()
+        // the recorder renames this number's recordings and messages by what you confirmed
+        if (label != null) ScreenHandoff.describe(app, number, label, confirmed = true)
     }
 
     private fun load(): List<Memo> = prefs.getStringSet(KEY, emptySet()).orEmpty().mapNotNull { line ->

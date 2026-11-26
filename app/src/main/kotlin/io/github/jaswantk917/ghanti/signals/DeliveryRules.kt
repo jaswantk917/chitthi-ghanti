@@ -42,7 +42,8 @@ data class ScreenSettings(
     val repeatCallers: Boolean = true,
 )
 
-data class Decision(val ring: Boolean, val guess: Guess? = null, val repeat: Boolean = false)
+/** [expected]: it rang only because you said a new number would call */
+data class Decision(val ring: Boolean, val guess: Guess? = null, val repeat: Boolean = false, val expected: Boolean = false)
 
 object DeliveryRules {
     const val LIVE_WINDOW_MS = 90 * 60_000L
@@ -209,6 +210,7 @@ object DeliveryRules {
         now: Long,
         settings: ScreenSettings,
         zone: ZoneId = ZoneId.systemDefault(),
+        strangersRingUntil: Long = 0L,
     ): Decision {
         val guess = if (isContact) null else guess(number, signals, now, zone)
         if (isContact || !settings.silenceUnknown) return Decision(ring = true, guess = guess)
@@ -216,6 +218,7 @@ object DeliveryRules {
         if (settings.repeatCallers && lastSilencedFromSame != null && now - lastSilencedFromSame <= REPEAT_WINDOW_MS) {
             return Decision(ring = true, guess = guess, repeat = true)
         }
+        if (now < strangersRingUntil) return Decision(ring = true, guess = guess, expected = true)
         return Decision(ring = false, guess = guess)
     }
 
