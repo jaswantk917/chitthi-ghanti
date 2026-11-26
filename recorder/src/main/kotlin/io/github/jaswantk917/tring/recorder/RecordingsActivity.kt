@@ -1,26 +1,19 @@
 package io.github.jaswantk917.tring.recorder
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
-import android.os.PersistableBundle
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.ui.draw.rotate
-import androidx.compose.material.icons.rounded.ExpandMore
 import android.content.Context
-import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -35,9 +28,11 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -56,8 +51,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -67,12 +62,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -98,16 +97,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.ripple
-import androidx.compose.material3.toShape
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.ripple
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -119,10 +119,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -131,16 +140,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 /** The recorder's home: your recorded calls, each with its transcript and a summary, made on the phone. */
 class RecordingsActivity : ComponentActivity() {
@@ -258,6 +267,7 @@ fun RecorderApp(
     onShare: (Recording) -> Unit,
     onDelete: (Recording) -> Unit,
 ) {
+    val motion = MaterialTheme.motionScheme
     val current = recordings?.firstOrNull { it.id == open }
     BackHandler(current != null) { onOpen(null) }
     // a Surface, not a background: it is what gives text and icons their on-surface colour
@@ -265,9 +275,10 @@ fun RecorderApp(
     AnimatedContent(
         current,
         contentKey = { it?.id },
+        // a full-screen move: Material's slow spatial spring for the slide, the effects springs for the fades
         transitionSpec = {
-            if (targetState != null) (slideInHorizontally { it / 3 } + fadeIn()) togetherWith (slideOutHorizontally { -it / 6 } + fadeOut())
-            else (slideInHorizontally { -it / 6 } + fadeIn()) togetherWith (slideOutHorizontally { it / 3 } + fadeOut())
+            if (targetState != null) (slideInHorizontally(motion.slowSpatialSpec()) { it / 3 } + fadeIn(motion.defaultEffectsSpec())) togetherWith (slideOutHorizontally(motion.slowSpatialSpec()) { -it / 6 } + fadeOut(motion.fastEffectsSpec()))
+            else (slideInHorizontally(motion.slowSpatialSpec()) { -it / 6 } + fadeIn(motion.defaultEffectsSpec())) togetherWith (slideOutHorizontally(motion.slowSpatialSpec()) { it / 3 } + fadeOut(motion.fastEffectsSpec()))
         },
         modifier = Modifier.fillMaxSize(),
         label = "screen",
@@ -298,29 +309,24 @@ private fun RecordingList(
     val context = LocalContext.current
     val shell by Shell.status.collectAsState()
     val screening = remember(shell, recordings) { Screening.isOn(context) && Screening.canRun(context) }
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = bars.calculateTopPadding() + 20.dp, bottom = bars.calculateBottomPadding() + 40.dp),
-    ) {
-        item(key = "title") {
-            Row(Modifier.fillMaxWidth().padding(bottom = 20.dp), verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text("Your calls", style = MaterialTheme.typography.displaySmall)
-                    Text(
-                        when {
-                            screening -> "Answering strangers for you"
-                            recordings.isNullOrEmpty() -> "Kept on this phone, only for you"
-                            recordings.size == 1 -> "1 call kept on this phone"
-                            else -> "${recordings.size} calls kept on this phone"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (screening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                FilledTonalIconButton(onClick = onSetup, modifier = Modifier.size(48.dp)) { Icon(Icons.Rounded.Tune, "Settings") }
+    val density = LocalDensity.current
+    var headerHeight by remember { mutableStateOf(120.dp) }
+    var titleHeight by remember { mutableFloatStateOf(0f) }
+    // scrolling down tucks the title away, scrolling up brings it back, as in Ghanti
+    var collapse by remember { mutableFloatStateOf(0f) }
+    val collapser = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                collapse = (collapse - available.y).coerceIn(0f, titleHeight)
+                return Offset.Zero
             }
         }
+    }
+    Box(Modifier.fillMaxSize().nestedScroll(collapser)) {
+    LazyColumn(
+        Modifier.fillMaxSize().edgeBlur(top = { headerHeight - with(density) { collapse.toDp() } }, bottom = bars.calculateBottomPadding() + 24.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = headerHeight + 8.dp, bottom = bars.calculateBottomPadding() + 40.dp),
+    ) {
         if (update != null) item(key = "update") { UpdateCard(update, onUpdate) }
         if (!setupDone) item(key = "setup") { SetupCard(onSetup) }
         if (!recordings.isNullOrEmpty()) item(key = "lately") { LatelyCard(recordings, notes, processor, tick, working = work.isNotEmpty()) }
@@ -351,6 +357,22 @@ private fun RecordingList(
                 }
             }
         }
+    }
+    ListHeader(
+        title = "Your calls",
+        line = when {
+            screening -> "Answering strangers for you"
+            recordings.isNullOrEmpty() -> "Kept on this phone, only for you"
+            recordings.size == 1 -> "1 call kept on this phone"
+            else -> "${recordings.size} calls kept on this phone"
+        },
+        lineColor = if (screening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        onSettings = onSetup,
+        collapse = { collapse },
+        onTitleHeight = { titleHeight = it.toFloat() },
+        modifier = Modifier.onSizeChanged { headerHeight = with(density) { it.height.toDp() } },
+    )
+    StatusBarWash()
     }
 }
 
@@ -448,7 +470,7 @@ private fun LatelyCard(recordings: List<Recording>, notes: Notes, processor: Pro
 private fun RecordingRow(recording: Recording, notes: Notes, tick: Int, working: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "press")
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, MaterialTheme.motionScheme.fastSpatialSpec(), label = "press")
     val scheme = MaterialTheme.colorScheme
     val gist by produceState<String?>(null, recording.id, tick) {
         value = withContext(Dispatchers.IO) {
@@ -546,27 +568,15 @@ private fun RecordingDetail(
     val turns = remember(recording.id, tick) { notes.turns(recording.id) }
     val message = remember(recording.id, tick) { notes.isMessage(recording.id) }
     // the bar only lifts off the page once the page has moved under it
-    val lifted by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "bar")
-    Column(Modifier.fillMaxSize()) {
-    Row(
-        Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = lifted))
-            .padding(top = bars.calculateTopPadding())
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-        Text(
-            recording.who, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).padding(horizontal = 4.dp).alpha(lifted),
-        )
-        IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, "Share") }
-        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Delete") }
-    }
+    val lifted by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "bar")
+    val density = LocalDensity.current
+    var barHeight by remember { mutableStateOf(64.dp) }
+    val surface = MaterialTheme.colorScheme.surface
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
-        Modifier.fillMaxWidth().weight(1f),
+        Modifier.fillMaxSize().edgeBlur(top = { barHeight }, bottom = bars.calculateBottomPadding() + 24.dp),
         state = list,
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = bars.calculateBottomPadding() + 48.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = barHeight + 4.dp, bottom = bars.calculateBottomPadding() + 48.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "title") {
@@ -625,6 +635,25 @@ private fun RecordingDetail(
             }
         }
         items(Minute.of(shown), key = { "minute-${it.index}" }) { SpokenMinute(it, Modifier.animateItem()) }
+    }
+    // Ghanti's see-through bar: the page slides under it into the blur; the name shows once the big one has gone under
+    Row(
+        Modifier.fillMaxWidth()
+            .onSizeChanged { barHeight = with(density) { it.height.toDp() } }
+            .drawBehind {
+                drawRect(Brush.verticalGradient(0f to surface.copy(alpha = 0.85f), 0.65f to surface.copy(alpha = 0.65f + 0.2f * lifted), 1f to surface.copy(alpha = 0.45f * lifted)))
+            }
+            .padding(top = bars.calculateTopPadding())
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+        Text(
+            recording.who, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = 4.dp).alpha(lifted),
+        )
+        IconButton(onClick = onShare) { Icon(Icons.Rounded.Share, "Share") }
+        IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Rounded.Delete, "Delete") }
     }
     }
 
@@ -748,6 +777,7 @@ private fun SummaryCard(summary: String?, working: Boolean, waiting: Boolean, ca
 /** the whole transcript to the clipboard, marked private so the phone doesn't preview a call on screen */
 @Composable
 private fun CopyButton(text: () -> String) {
+    val motion = MaterialTheme.motionScheme
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     var copied by remember { mutableStateOf(false) }
@@ -764,7 +794,7 @@ private fun CopyButton(text: () -> String) {
         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
         copied = true
     }) {
-        AnimatedContent(copied, transitionSpec = { (fadeIn() + scaleIn()) togetherWith (fadeOut() + scaleOut()) }, label = "copy") {
+        AnimatedContent(copied, transitionSpec = { (fadeIn(motion.fastEffectsSpec()) + scaleIn(motion.fastSpatialSpec())) togetherWith (fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.fastSpatialSpec())) }, label = "copy") {
             Icon(if (it) Icons.Rounded.Check else Icons.Rounded.ContentCopy, if (it) "Copied" else "Copy the transcript")
         }
     }
@@ -853,6 +883,7 @@ internal fun ClearerCard(
     onCancel: () -> Unit,
     onWrite: () -> Unit,
 ) {
+    val motion = MaterialTheme.motionScheme
     val haptics = LocalHapticFeedback.current
     var downloading by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
@@ -870,7 +901,7 @@ internal fun ClearerCard(
         written -> "written"
         else -> "offer"
     }
-    AnimatedContent(stage, transitionSpec = { (fadeIn() + expandVertically()) togetherWith (fadeOut() + shrinkVertically()) }, label = "clearer") { now ->
+    AnimatedContent(stage, transitionSpec = { (fadeIn(motion.defaultEffectsSpec()) + expandVertically(motion.defaultSpatialSpec())) togetherWith (fadeOut(motion.fastEffectsSpec()) + shrinkVertically(motion.fastSpatialSpec())) }, label = "clearer") { now ->
         when (now) {
             "busy" -> Spacer(Modifier.fillMaxWidth())
             "written" -> Row(Modifier.fillMaxWidth().padding(start = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {

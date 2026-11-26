@@ -124,7 +124,8 @@ internal fun ScreenPage(live: Screening.Live, onPickUp: () -> Unit, onHangUp: ()
     val haptics = LocalHapticFeedback.current
     val ringing = live.stage == Screening.Stage.Ringing
     val over = live.stage == Screening.Stage.Ended
-    val glow by animateColorAsState(if (ringing) scheme.primary.copy(alpha = 0.3f) else scheme.surfaceContainerHigh, tween(500), label = "glow")
+    val motion = MaterialTheme.motionScheme
+    val glow by animateColorAsState(if (ringing) scheme.primary.copy(alpha = 0.3f) else scheme.surfaceContainerHigh, motion.slowEffectsSpec(), label = "glow")
     Surface(Modifier.fillMaxSize(), color = scheme.surface) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to glow, 0.55f to scheme.surface))) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 16.dp)) {
@@ -135,11 +136,14 @@ internal fun ScreenPage(live: Screening.Live, onPickUp: () -> Unit, onHangUp: ()
                 }
                 AnimatedContent(
                     title(live),
-                    transitionSpec = { (fadeIn(tween(220)) + slideInVertically { it / 4 }) togetherWith (fadeOut(tween(120)) + slideOutVertically { -it / 4 }) },
+                    transitionSpec = {
+                        (fadeIn(motion.defaultEffectsSpec()) + slideInVertically(motion.defaultSpatialSpec()) { it / 4 }) togetherWith
+                            (fadeOut(motion.fastEffectsSpec()) + slideOutVertically(motion.fastSpatialSpec()) { -it / 4 })
+                    },
                     label = "stage",
                     modifier = Modifier.padding(top = 20.dp),
                 ) { Text(it, style = MaterialTheme.typography.displaySmall, color = scheme.onSurface) }
-                AnimatedContent(hint(live), transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) }, label = "hint", modifier = Modifier.padding(top = 8.dp)) {
+                AnimatedContent(hint(live), transitionSpec = { fadeIn(motion.defaultEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) }, label = "hint", modifier = Modifier.padding(top = 8.dp)) {
                     Text(it, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant)
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.TopStart) {
