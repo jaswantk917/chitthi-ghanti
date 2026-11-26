@@ -1,24 +1,23 @@
 package io.github.jaswantk917.ghanti.ui.home
 
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.FiberManualRecord
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.remember
-import io.github.jaswantk917.ghanti.data.AutoRecord
-import io.github.jaswantk917.ghanti.data.Prefs
-import io.github.jaswantk917.ghanti.signals.StrangersRing
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.PaddingValues
-import io.github.jaswantk917.ghanti.incall.Recorder
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,16 +29,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DeliveryDining
+import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.LocalTaxi
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Palette as PaletteIcon
+import androidx.compose.material.icons.rounded.Portrait
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.Vibration
@@ -59,6 +61,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,15 +69,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.data.CallStyle
+import io.github.jaswantk917.ghanti.data.Prefs
 import io.github.jaswantk917.ghanti.data.Settings
+import io.github.jaswantk917.ghanti.incall.Recorder
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.signals.Signal
+import io.github.jaswantk917.ghanti.signals.StrangersRing
 import io.github.jaswantk917.ghanti.signals.Strength
+import io.github.jaswantk917.ghanti.ui.components.SpringSegments
+import io.github.jaswantk917.ghanti.ui.components.springPick
 import io.github.jaswantk917.ghanti.ui.theme.Palette
 import io.github.jaswantk917.ghanti.ui.util.Haptic
-import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.util.clockTime
+import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.sheet.SheetColumn
 import kotlin.math.abs
 import kotlinx.coroutines.flow.drop
@@ -109,24 +121,37 @@ fun SettingsSheet(
             Section(Icons.Rounded.NotificationsOff, "Silence strangers", "Numbers not in your contacts ring without a sound. They still show, so you can answer") {
                 Switch(settings.screen.silenceUnknown, onCheckedChange = { on -> toggle(on); onChange { it.copy(screen = it.screen.copy(silenceUnknown = on)) } })
             }
-            Section(
-                Icons.Rounded.DeliveryDining, "Let delivery calls ring",
-                if (setup.readsNotifications) "While an order or ride is on its way, strangers ring out loud"
-                else "Needs notification access, to see what's on its way",
+            // both only mean something while strangers are silenced: off, they fold up into it
+            AnimatedVisibility(
+                settings.screen.silenceUnknown,
+                enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), expandFrom = Alignment.Top) +
+                    fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    slideInVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { -it / 3 },
+                exit = shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), shrinkTowards = Alignment.Top) +
+                    fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) +
+                    slideOutVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) { -it / 3 },
             ) {
-                if (setup.readsNotifications) {
-                    Switch(settings.screen.letDeliveries, enabled = settings.screen.silenceUnknown, onCheckedChange = { on ->
-                        toggle(on); onChange { it.copy(screen = it.screen.copy(letDeliveries = on)) }
-                    })
-                } else {
-                    Button(onClick = onAllowNotifications) { Text("Allow") }
+                Column {
+                    Section(
+                        Icons.Rounded.DeliveryDining, "Let delivery calls ring",
+                        if (setup.readsNotifications) "While an order or ride is on its way, strangers ring out loud"
+                        else "Needs notification access, to see what's on its way",
+                    ) {
+                        if (setup.readsNotifications) {
+                            Switch(settings.screen.letDeliveries, onCheckedChange = { on ->
+                                toggle(on); onChange { it.copy(screen = it.screen.copy(letDeliveries = on)) }
+                            })
+                        } else {
+                            Button(onClick = onAllowNotifications) { Text("Allow") }
+                        }
+                    }
+                    Section(Icons.Rounded.Replay, "Ring if they call again", "A second call within 3 minutes usually matters") {
+                        Switch(settings.screen.repeatCallers, onCheckedChange = { on ->
+                            toggle(on); onChange { it.copy(screen = it.screen.copy(repeatCallers = on)) }
+                        })
+                    }
                 }
-            }
-            Section(Icons.Rounded.Replay, "Ring if they call again", "A second call within 3 minutes usually matters") {
-                Switch(settings.screen.repeatCallers, enabled = settings.screen.silenceUnknown, onCheckedChange = { on ->
-                    toggle(on); onChange { it.copy(screen = it.screen.copy(repeatCallers = on)) }
-                })
-            }
+                }
             Section(Icons.Rounded.Vibration, "Vibrate when calls connect and end", "A firm pulse when they pick up, a soft one when they hang up or the call drops. Felt with the phone at your ear") {
                 Switch(settings.callBuzz, onCheckedChange = { on -> toggle(on); onChange { it.copy(callBuzz = on) } })
             }
@@ -139,12 +164,14 @@ fun SettingsSheet(
                         AutoRecord.Strangers -> "Numbers not in your contacts record as soon as they connect"
                         AutoRecord.Everyone -> "Every call records as soon as it connects. Tap Record to stop one"
                     },
+                    lines = 2,
                 ) {}
                 FlowRow(Modifier.fillMaxWidth().padding(start = 40.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     AutoRecord.entries.forEach { mode ->
                         ToggleButton(
                             checked = settings.autoRecord == mode,
                             onCheckedChange = { haptics.play(Haptic.Segment); onChange { it.copy(autoRecord = mode) } },
+                            modifier = Modifier.springPick(settings.autoRecord == mode),
                         ) {
                             Text(
                                 when (mode) {
@@ -162,17 +189,39 @@ fun SettingsSheet(
             Section(Icons.Rounded.Block, "Blocked", "Numbers and rules, like every 140… telemarketer") {
                 TextButton(onClick = { haptics.play(Haptic.Tap); onOpenBlocked() }) { Text("Open") }
             }
+            Section(
+                Icons.Rounded.Portrait, "Call screen",
+                when (settings.callStyle) {
+                    CallStyle.Classic -> "Their face in a shape, in the middle"
+                    CallStyle.Photo -> "Their own photo fills the top and colours the page"
+                },
+                lines = 2,
+            ) {}
+            SpringSegments(
+                labels = listOf("Classic", "Photo"),
+                selected = CallStyle.entries.indexOf(settings.callStyle),
+                onSelect = { i ->
+                    val style = CallStyle.entries[i]
+                    if (style != settings.callStyle) {
+                        haptics.play(Haptic.Segment)
+                        onChange { it.copy(callStyle = style) }
+                    }
+                },
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
             Section(Icons.Rounded.PaletteIcon, "Colours", "Messages blue, or Material You from your wallpaper") {}
-            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
-                Palette.entries.forEachIndexed { i, palette ->
-                    ToggleButton(
-                        checked = settings.palette == palette,
-                        onCheckedChange = { haptics.play(Haptic.Segment); onChange { it.copy(palette = palette) } },
-                        shapes = if (i == 0) ButtonGroupDefaults.connectedLeadingButtonShapes() else ButtonGroupDefaults.connectedTrailingButtonShapes(),
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (palette == Palette.Ghanti) "Ghanti" else "Wallpaper", maxLines = 1) }
-                }
-            }
+            SpringSegments(
+                labels = Palette.entries.map { if (it == Palette.Ghanti) "Ghanti" else "Wallpaper" },
+                selected = Palette.entries.indexOf(settings.palette),
+                onSelect = { i ->
+                    val palette = Palette.entries[i]
+                    if (palette != settings.palette) {
+                        haptics.play(Haptic.Segment)
+                        onChange { it.copy(palette = palette) }
+                    }
+                },
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
             Section(Icons.Rounded.DarkMode, "AMOLED black", "Pure black backgrounds in dark mode") {
                 Switch(settings.amoled, onCheckedChange = { on -> toggle(on); onChange { it.copy(amoled = on) } })
             }
@@ -194,13 +243,17 @@ fun SettingsSheet(
 }
 
 @Composable
-private fun Section(icon: ImageVector, title: String, line: String, trailing: @Composable () -> Unit) {
+private fun Section(icon: ImageVector, title: String, line: String, lines: Int = 1, trailing: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // a line that changes with a choice below keeps [lines] of room, so picking doesn't push the rows under it
+            val motion = MaterialTheme.motionScheme
+            AnimatedContent(line, transitionSpec = { fadeIn(motion.fastEffectsSpec()) togetherWith fadeOut(motion.fastEffectsSpec()) }, label = "line") { shown ->
+                Text(shown, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = lines)
+            }
         }
         Spacer(Modifier.width(12.dp))
         trailing()
@@ -265,25 +318,17 @@ private fun NewNumber(strangers: Prefs.StrangersRing, onRing: (hours: Int?) -> U
         Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Spacer(Modifier.height(12.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
-        StrangersRing.choices.forEachIndexed { i, (hours, label) ->
+    // the picked length's pill springs between choices; tapping the picked one again stops it
+    SpringSegments(
+        labels = StrangersRing.choices.map { it.second },
+        selected = StrangersRing.choices.indexOfFirst { it.first == strangers.hours }.takeIf { on && it >= 0 },
+        onSelect = { i ->
+            val hours = StrangersRing.choices[i].first
             val picked = on && strangers.hours == hours
-            ToggleButton(
-                checked = picked,
-                onCheckedChange = { checked ->
-                    haptics.play(if (checked) Haptic.ToggleOn else Haptic.ToggleOff)
-                    onRing(if (checked) hours else null)
-                },
-                shapes = when (i) {
-                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
-                    StrangersRing.choices.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                },
-                contentPadding = PaddingValues(horizontal = 4.dp),
-                modifier = Modifier.weight(1f),
-            ) { Text(label, maxLines = 1) }
-        }
-    }
+            haptics.play(if (picked) Haptic.ToggleOff else Haptic.ToggleOn)
+            onRing(if (picked) null else hours)
+        },
+    )
     AnimatedVisibility(on) {
         TextButton(onClick = { haptics.play(Haptic.ToggleOff); onRing(null) }, modifier = Modifier.padding(top = 4.dp)) { Text("Stop, silence strangers") }
     }

@@ -41,6 +41,8 @@
         </intent>
         <!-- Tring Recorder, installed from a file: the Record button shows only when it's there -->
         <package android:name="io.github.jaswantk917.tring.recorder" />
+        <!-- Google's contact sync lives in Play services: asked, it fetches a contact's full-size photo -->
+        <package android:name="com.google.android.gms" />
     </queries>
 
     <application

@@ -7,11 +7,6 @@ import android.telecom.TelecomManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import io.github.jaswantk917.ghanti.incall.Recorder
-import androidx.compose.material.icons.rounded.FiberManualRecord
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -23,11 +18,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -39,9 +36,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -55,6 +52,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,11 +63,12 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.CallMerge
 import androidx.compose.material.icons.rounded.DeliveryDining
-import androidx.compose.material.icons.rounded.EditNote
-import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Dialpad
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.FiberManualRecord
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.LocalTaxi
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
@@ -82,10 +81,10 @@ import androidx.compose.material.icons.rounded.SimCard
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.SwapCalls
 import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -121,16 +120,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import io.github.jaswantk917.ghanti.GhantiApp
+import io.github.jaswantk917.ghanti.data.CallStyle
 import io.github.jaswantk917.ghanti.data.MemoList
 import io.github.jaswantk917.ghanti.incall.CallUi
 import io.github.jaswantk917.ghanti.incall.Calls
 import io.github.jaswantk917.ghanti.incall.Phase
+import io.github.jaswantk917.ghanti.incall.Recorder
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.signals.Guess
 import io.github.jaswantk917.ghanti.ui.components.Avatar
@@ -151,8 +153,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // answer and decline keep the colours every phone has taught us
-private val AnswerGreen = Color(0xFF1E8E3E)
-private val DeclineRed = Color(0xFFD93025)
+internal val AnswerGreen = Color(0xFF1E8E3E)
+internal val DeclineRed = Color(0xFFD93025)
 
 /** [ended] freezes the last call on screen for its "Call ended" beat. */
 @Composable
@@ -164,6 +166,36 @@ fun InCallScreen(
     noting: Boolean,
     onNoting: (Boolean) -> Unit,
     onAddCall: () -> Unit,
+    /** the whole page's look; Photo falls back to Classic for a call without a sharp photo */
+    style: CallStyle = CallStyle.Classic,
+    /** the phone is locked: answering and declining take a swipe, so a pocket can't do either */
+    locked: Boolean = false,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // the photo page needs the height for its square photo and the buttons under it
+        val fits = maxHeight >= 600.dp && maxHeight > maxWidth
+        when (val photo = rememberCallPhoto(call, if (fits) style else CallStyle.Classic)) {
+            // read as the call arrives, before this screen opens, so this lasts a frame or two at most
+            PhotoState.Pending -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
+            PhotoState.None -> CallScreen(call, others, audio, endedAt, noting, onNoting, onAddCall, locked, photo = null)
+            is PhotoState.Ready -> PhotoTheme(photo.photo.seed) {
+                CallScreen(call, others, audio, endedAt, noting, onNoting, onAddCall, locked, photo.photo)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallScreen(
+    call: CallUi,
+    others: List<CallUi>,
+    audio: CallAudioState?,
+    endedAt: Long?,
+    noting: Boolean,
+    onNoting: (Boolean) -> Unit,
+    onAddCall: () -> Unit,
+    locked: Boolean,
+    photo: CallPhoto?,
 ) {
     val scheme = MaterialTheme.colorScheme
     val haptics = rememberHaptics()
@@ -196,151 +228,163 @@ fun InCallScreen(
         )
     }
 
+    // who it was and the note share a line: both are what you'd jot down about the call
+    val hinted = call.phase == Phase.Ringing || call.outcome?.guess != null || (stranger && (memo?.label != null || before != null))
+    val hintsRow: @Composable (Alignment.Horizontal) -> Unit = { align ->
+        // on a small phone at large text the two don't fit side by side, so the note drops below
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, align),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (hinted) {
+                Box {
+                    Hints(
+                        call, ended,
+                        label = memo?.label?.takeIf { stranger },
+                        before = before?.takeIf { stranger },
+                        canConfirm = stranger && call.phase != Phase.Ringing,
+                        onConfirm = ::confirm,
+                        onPick = { onNoting(true) },
+                    )
+                }
+            }
+            AnimatedVisibility(canNote, enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
+                NoteEntry(memo?.note.orEmpty(), short = hinted, onClick = { haptics.play(Haptic.Tap); onNoting(true) })
+            }
+        }
+    }
+
     var face by remember { mutableStateOf(Offset.Unspecified) }
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.surface)) {
-        Drifting(connecting = call.phase == Phase.Dialing && !ended, target = face, modifier = Modifier.fillMaxSize())
-        // the face gives up room on short screens, when a note can show and when another call waits above;
-        // not tied to the keypad, or the face grows for a frame when the keypad hides the note, then shrinks away
-        val waiting = others.isNotEmpty() && !ended
-        val backdrop by animateDpAsState(
-            (maxHeight - 720.dp - (if (notable) 56.dp else 0.dp) - (if (waiting) 76.dp else 0.dp))
-                .coerceIn(if (waiting) 88.dp else 150.dp, 240.dp),
-            MaterialTheme.motionScheme.defaultSpatialSpec(), label = "face",
-        )
-        Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).navigationBarsPadding().padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            AnimatedVisibility(others.isNotEmpty() && !ended, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-                others.firstOrNull()?.let { OtherCall(it, Modifier.padding(top = 12.dp)) }
-            }
-            // with a call on hold above, the end button was squeezed to a sliver on a Pixel 9
-            val gap by animateDpAsState(if (waiting) 12.dp else 36.dp, label = "gap")
-            Spacer(Modifier.height(gap))
-            Status(call, endedAt)
-            Spacer(Modifier.height(if (waiting) 20.dp else 28.dp))
-            // the keypad needs the room, so the face steps aside while it's open
-            AnimatedVisibility(
-                visible = !keypad || ended,
-                enter = expandVertically() + fadeIn() + scaleIn(initialScale = 0.8f),
-                exit = shrinkVertically() + fadeOut() + scaleOut(targetScale = 0.8f),
+        if (photo != null) {
+            PhotoPage(
+                photo, call, others, audio, endedAt, locked,
+                mode = modeOf(call, ended, keypad),
+                tones = tones,
+                hints = { hintsRow(Alignment.Start) },
+                onKeypad = { keypad = it },
+                onTone = { c -> tones += c },
+                onReplies = { replies = true },
+                onRoutes = { routes = true },
+                onAddCall = onAddCall,
+            )
+        } else {
+            Drifting(connecting = call.phase == Phase.Dialing && !ended, target = face, modifier = Modifier.fillMaxSize())
+            // the face gives up room on short screens, when a note can show and when another call waits above;
+            // not tied to the keypad, or the face grows for a frame when the keypad hides the note, then shrinks away
+            val waiting = others.isNotEmpty() && !ended
+            // an 800 dp phone (the Realme) squeezed the end button to 56 dp, and to 22 at large text: there the
+            // gaps tighten and the face gives up more room, sized for the text scale. Taller phones are as before
+            val compact = maxHeight < 860.dp
+            val fontScale = LocalDensity.current.fontScale
+            val room = maxHeight - (if (notable) 56.dp else 0.dp) - (if (waiting) 76.dp else 0.dp)
+            val backdrop by animateDpAsState(
+                if (compact) {
+                    (room - 600.dp - 150.dp * (fontScale - 1f).coerceAtLeast(0f)).coerceIn(if (waiting) 64.dp else 120.dp, 240.dp)
+                } else {
+                    (room - 720.dp).coerceIn(if (waiting) 88.dp else 150.dp, 240.dp)
+                },
+                MaterialTheme.motionScheme.defaultSpatialSpec(), label = "face",
+            )
+            Column(
+                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).navigationBarsPadding().padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    val speaker = audio?.route == CallAudioState.ROUTE_SPEAKER && !ended
-                    // on speaker the phone is away from your face: the face comes forward to be read from there
-                    val zoom by animateFloatAsState(if (speaker) 1.12f else 1f, spring(dampingRatio = 0.55f, stiffness = 260f), label = "zoom")
-                    Box(
-                        Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }.onGloballyPositioned { face = it.boundsInRoot().center },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        // a photo fills the shape, so the shape is its living border; a monogram keeps its own shape inside
-                        val framed = call.participants.isEmpty() && call.person?.photo != null
-                        LivingBackdrop(
-                            ringing = call.phase == Phase.Ringing && !ended,
-                            connecting = call.phase == Phase.Dialing && !ended,
-                            loud = speaker,
-                            still = ended || audio?.isMuted == true || call.phase == Phase.Holding,
-                            paused = ended || call.phase == Phase.Holding,
-                            size = backdrop,
-                            framed = framed,
+                AnimatedVisibility(others.isNotEmpty() && !ended, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                    others.firstOrNull()?.let { OtherCall(it, Modifier.padding(top = 12.dp)) }
+                }
+                // with a call on hold above, the end button was squeezed to a sliver on a Pixel 9
+                val gap by animateDpAsState(if (waiting) 12.dp else if (compact) 20.dp else 36.dp, label = "gap")
+                Spacer(Modifier.height(gap))
+                Status(call, endedAt)
+                Spacer(Modifier.height(if (compact) (if (waiting) 12.dp else 16.dp) else if (waiting) 20.dp else 28.dp))
+                // the keypad needs the room, so the face steps aside while it's open
+                AnimatedVisibility(
+                    visible = !keypad || ended,
+                    enter = expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec()) + fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) + scaleIn(MaterialTheme.motionScheme.defaultSpatialSpec(), initialScale = 0.8f),
+                    exit = shrinkVertically(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(MaterialTheme.motionScheme.fastEffectsSpec()) + scaleOut(MaterialTheme.motionScheme.fastSpatialSpec(), targetScale = 0.8f),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val speaker = audio?.route == CallAudioState.ROUTE_SPEAKER && !ended
+                        // on speaker the phone is away from your face: the face comes forward to be read from there
+                        val zoom by animateFloatAsState(if (speaker) 1.12f else 1f, MaterialTheme.motionScheme.defaultSpatialSpec(), label = "zoom")
+                        Box(
+                            Modifier.graphicsLayer { scaleX = zoom; scaleY = zoom }.onGloballyPositioned { face = it.boundsInRoot().center },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            AnimatedContent(
-                                call.participants,
-                                transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.85f)) togetherWith (fadeOut() + scaleOut(targetScale = 1.1f)) },
-                                contentKey = { it.isNotEmpty() },
-                                label = "faces",
-                            ) { participants ->
-                                if (participants.isNotEmpty()) Faces(participants, backdrop * 0.55f)
-                                else Avatar(
-                                    name = call.person?.name,
-                                    photo = call.person?.photo,
-                                    seed = call.number,
-                                    size = backdrop * (if (framed) 0.82f else 0.55f),
-                                    hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
-                                )
+                            // a photo fills the shape, so the shape is its living border; a monogram keeps its own shape inside
+                            val framed = call.participants.isEmpty() && call.person?.photo != null
+                            LivingBackdrop(
+                                ringing = call.phase == Phase.Ringing && !ended,
+                                connecting = call.phase == Phase.Dialing && !ended,
+                                loud = speaker,
+                                still = ended || audio?.isMuted == true || call.phase == Phase.Holding,
+                                paused = ended || call.phase == Phase.Holding,
+                                size = backdrop,
+                                framed = framed,
+                            ) {
+                                AnimatedContent(
+                                    call.participants,
+                                    transitionSpec = { (fadeIn() + scaleIn(initialScale = 0.85f)) togetherWith (fadeOut() + scaleOut(targetScale = 1.1f)) },
+                                    contentKey = { it.isNotEmpty() },
+                                    label = "faces",
+                                ) { participants ->
+                                    if (participants.isNotEmpty()) Faces(participants, backdrop * 0.55f)
+                                    else Avatar(
+                                        name = call.person?.name,
+                                        photo = call.person?.photo,
+                                        seed = call.number,
+                                        size = backdrop * (if (framed) 0.82f else 0.55f),
+                                        hint = call.outcome?.guess?.let { if (it.ride) AvatarHint.Ride else AvatarHint.Delivery } ?: AvatarHint.None,
+                                    )
+                                }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(20.dp))
-                }
-            }
-            Text(
-                call.title,
-                style = MaterialTheme.typography.displaySmallEmphasized,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (call.participants.isNotEmpty() && !ended) {
-                TextButton(onClick = { haptics.play(Haptic.Tap); people = true }) {
-                    Icon(Icons.Rounded.Groups, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("${call.participants.size} people")
-                }
-            } else {
-                Secondary(call, tones)
-            }
-            Spacer(Modifier.height(14.dp))
-            // who it was and the note share a line: both are what you'd jot down about the call
-            val hinted = call.phase == Phase.Ringing || call.outcome?.guess != null || (stranger && (memo?.label != null || before != null))
-            // on a small phone at large text the two don't fit side by side, so the note drops below
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (hinted) {
-                    Box {
-                        Hints(
-                            call, ended,
-                            label = memo?.label?.takeIf { stranger },
-                            before = before?.takeIf { stranger },
-                            canConfirm = stranger && call.phase != Phase.Ringing,
-                            onConfirm = ::confirm,
-                            onPick = { onNoting(true) },
-                        )
+                        Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
                     }
                 }
-                AnimatedVisibility(canNote, enter = expandHorizontally() + fadeIn(), exit = shrinkHorizontally() + fadeOut()) {
-                    NoteEntry(memo?.note.orEmpty(), short = hinted, onClick = { haptics.play(Haptic.Tap); onNoting(true) })
+                Text(
+                    call.title,
+                    style = MaterialTheme.typography.displaySmallEmphasized,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (call.participants.isNotEmpty() && !ended) {
+                    TextButton(onClick = { haptics.play(Haptic.Tap); people = true }) {
+                        Icon(Icons.Rounded.Groups, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("${call.participants.size} people")
+                    }
+                } else {
+                    Secondary(call, tones)
                 }
-            }
-            Spacer(Modifier.weight(1f))
-            // the weight above is zero once a guess and a note both show, so keep the controls off the note
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(14.dp))
+                hintsRow(Alignment.CenterHorizontally)
+                Spacer(Modifier.weight(1f))
+                // the weight above is zero once a guess and a note both show, so keep the controls off the note
+                Spacer(Modifier.height(if (compact) 16.dp else 24.dp))
 
-            AnimatedContent(
-                targetState = when {
-                    ended -> Mode.Ended
-                    call.phase == Phase.ChooseSim -> Mode.Sim
-                    call.phase == Phase.Ringing -> Mode.Incoming
-                    keypad -> Mode.Keypad
-                    else -> Mode.Controls
-                },
-                transitionSpec = {
-                    (fadeIn() + slideInVertically { it / 4 } + scaleIn(initialScale = 0.92f)) togetherWith
-                        (fadeOut() + slideOutVertically { it / 4 } + scaleOut(targetScale = 0.92f))
-                },
-                label = "mode",
-            ) { mode ->
-                when (mode) {
-                    Mode.Incoming -> Incoming(call, onMessage = { replies = true })
-                    Mode.Controls -> Controls(call, audio, others, onKeypad = { keypad = true }, onRoutes = { routes = true }, onAddCall = onAddCall)
-                    Mode.Keypad -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Dialpad(onKey = { c -> tones += c; Calls.tone(call.call, c) })
-                        Spacer(Modifier.height(20.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Spacer(Modifier.width(96.dp))
-                            EndButton(call)
-                            TextButton(onClick = { keypad = false }, modifier = Modifier.width(96.dp)) { Text("Hide") }
-                        }
+                AnimatedContent(
+                    targetState = modeOf(call, ended, keypad),
+                    transitionSpec = {
+                        (fadeIn() + slideInVertically { it / 4 } + scaleIn(initialScale = 0.92f)) togetherWith
+                            (fadeOut() + slideOutVertically { it / 4 } + scaleOut(targetScale = 0.92f))
+                    },
+                    label = "mode",
+                ) { mode ->
+                    when (mode) {
+                        Mode.Incoming -> Incoming(call, locked, onMessage = { replies = true })
+                        Mode.Controls -> Controls(call, audio, others, onKeypad = { keypad = true }, onRoutes = { routes = true }, onAddCall = onAddCall)
+                        Mode.Keypad -> KeypadArea(call, onTone = { c -> tones += c }, onHide = { keypad = false })
+                        Mode.Sim -> SimChooser(call)
+                        Mode.Ended -> Spacer(Modifier.height(1.dp))
                     }
-                    Mode.Sim -> SimChooser(call)
-                    Mode.Ended -> Spacer(Modifier.height(1.dp))
                 }
+                Spacer(Modifier.height(if (compact) 16.dp else 28.dp))
             }
-            Spacer(Modifier.height(28.dp))
         }
     }
 
@@ -359,10 +403,32 @@ fun InCallScreen(
     if (people && call.participants.isNotEmpty()) PeopleSheet(call.participants, onDismiss = { people = false })
 }
 
-private enum class Mode { Incoming, Controls, Keypad, Sim, Ended }
+internal enum class Mode { Incoming, Controls, Keypad, Sim, Ended }
+
+internal fun modeOf(call: CallUi, ended: Boolean, keypad: Boolean) = when {
+    ended -> Mode.Ended
+    call.phase == Phase.ChooseSim -> Mode.Sim
+    call.phase == Phase.Ringing -> Mode.Incoming
+    keypad -> Mode.Keypad
+    else -> Mode.Controls
+}
+
+/** the keypad and, under it, the end button with a way back to the buttons */
+@Composable
+internal fun KeypadArea(call: CallUi, onTone: (Char) -> Unit, onHide: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Dialpad(onKey = { c -> onTone(c); Calls.tone(call.call, c) })
+        Spacer(Modifier.height(20.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.width(96.dp))
+            EndButton(call)
+            TextButton(onClick = onHide, modifier = Modifier.width(96.dp)) { Text("Hide") }
+        }
+    }
+}
 
 @Composable
-private fun Status(call: CallUi, endedAt: Long?) {
+internal fun Status(call: CallUi, endedAt: Long?) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(call.phase, endedAt) {
         while (endedAt == null && call.phase == Phase.Active) {
@@ -397,7 +463,7 @@ private fun duration(ms: Long): String {
 
 /** the number under a name; holding it copies, handy for masked delivery numbers */
 @Composable
-private fun Secondary(call: CallUi, tones: String) {
+internal fun Secondary(call: CallUi, tones: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val line = when {
@@ -412,7 +478,7 @@ private fun Secondary(call: CallUi, tones: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,
         overflow = TextOverflow.StartEllipsis,
-        modifier = Modifier
+        modifier = modifier
             .padding(top = 4.dp)
             .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
@@ -572,10 +638,12 @@ private fun LivingBackdrop(
     val ripple by rememberInfiniteTransition(label = "ripple").animateFloat(
         0f, 1f, infiniteRepeatable(tween(1_800, easing = LinearEasing)), label = "ripple",
     )
-    val pace by animateFloatAsState(if (paused) 0f else 1f, tween(700), label = "pace")
-    val breath by animateFloatAsState(if (still) 0f else 1f, tween(500), label = "breath")
-    val open by animateFloatAsState(if (loud) 1f else 0f, spring(dampingRatio = 0.6f, stiffness = 180f), label = "open")
-    val dim by animateFloatAsState(if (paused) 0.25f else 0.55f, tween(700), label = "dim")
+    // the rings' speed and brightness are effects (no overshoot); their opening is a movement (a little bounce)
+    val motion = MaterialTheme.motionScheme
+    val pace by animateFloatAsState(if (paused) 0f else 1f, motion.slowEffectsSpec(), label = "pace")
+    val breath by animateFloatAsState(if (still) 0f else 1f, motion.defaultEffectsSpec(), label = "breath")
+    val open by animateFloatAsState(if (loud) 1f else 0f, motion.defaultSpatialSpec(), label = "open")
+    val dim by animateFloatAsState(if (paused) 0.25f else 0.55f, motion.slowEffectsSpec(), label = "dim")
     // seconds of motion; stands still while paused instead of jumping when it resumes
     var clock by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
@@ -734,9 +802,8 @@ private fun PeopleSheet(participants: List<CallUi>, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun Incoming(call: CallUi, onMessage: () -> Unit) {
+private fun Incoming(call: CallUi, locked: Boolean, onMessage: () -> Unit) {
     val haptics = rememberHaptics()
-    val bob = rememberInfiniteTransition(label = "bob").animateFloat(0f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "bob")
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         if (call.number.isNotBlank()) {
             FilledTonalButton(onClick = { haptics.play(Haptic.Tap); onMessage() }) {
@@ -746,12 +813,28 @@ private fun Incoming(call: CallUi, onMessage: () -> Unit) {
             }
             Spacer(Modifier.height(28.dp))
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            RoundAction(Icons.Rounded.CallEnd, "Decline", DeclineRed) { haptics.play(Haptic.Delete); Calls.decline(call.call) }
-            RoundAction(
-                Icons.Rounded.Call, "Answer", AnswerGreen,
-                modifier = Modifier.graphicsLayer { translationY = -6.dp.toPx() * bob.value },
-            ) { haptics.play(Haptic.Success); Calls.answer(call.call) }
+        // unlocking with a finger mid-ring brings the buttons back
+        val motion = MaterialTheme.motionScheme
+        AnimatedContent(
+            locked,
+            transitionSpec = {
+                (fadeIn(motion.defaultEffectsSpec()) + scaleIn(motion.defaultSpatialSpec(), initialScale = 0.94f)) togetherWith
+                    (fadeOut(motion.fastEffectsSpec()) + scaleOut(motion.defaultSpatialSpec(), targetScale = 0.94f))
+            },
+            label = "lock",
+        ) { swipe ->
+            if (swipe) {
+                SwipeToAnswer(onAnswer = { Calls.answer(call.call) }, onDecline = { Calls.decline(call.call) })
+            } else {
+                val bob = rememberInfiniteTransition(label = "bob").animateFloat(0f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "bob")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    RoundAction(Icons.Rounded.CallEnd, "Decline", DeclineRed) { haptics.play(Haptic.Delete); Calls.decline(call.call) }
+                    RoundAction(
+                        Icons.Rounded.Call, "Answer", AnswerGreen,
+                        modifier = Modifier.graphicsLayer { translationY = -6.dp.toPx() * bob.value },
+                    ) { haptics.play(Haptic.Success); Calls.answer(call.call) }
+                }
+            }
         }
     }
 }
@@ -783,6 +866,43 @@ private fun Controls(
     onRoutes: () -> Unit,
     onAddCall: () -> Unit,
 ) {
+    val actions = callActions(call, audio, others, onKeypad, onRoutes, onAddCall)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        actions.chunked(3).forEachIndexed { i, row ->
+            if (i > 0) Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { row.forEach { Control(it) } }
+        }
+        Spacer(Modifier.height(32.dp))
+        EndButton(call)
+    }
+}
+
+/** one call button, drawn by either page; [on] is the shape the classic page's button melts into when it's on */
+internal class CallAction(
+    val kind: Kind,
+    val icon: ImageVector,
+    val label: String,
+    val checked: Boolean,
+    val on: RoundedPolygon = MaterialShapes.Cookie4Sided,
+    /** a slow heartbeat on the icon while it's doing something, like recording */
+    val pulse: Boolean = false,
+    val enabled: Boolean = true,
+    val onLongClick: (() -> Unit)? = null,
+    val onClick: () -> Unit,
+) {
+    enum class Kind { Mute, Keypad, Speaker, Hold, Add, Extra }
+}
+
+/** the six buttons in the classic page's order: mute, keypad, speaker; hold, add call, then merge, record or swap */
+@Composable
+internal fun callActions(
+    call: CallUi,
+    audio: CallAudioState?,
+    others: List<CallUi>,
+    onKeypad: () -> Unit,
+    onRoutes: () -> Unit,
+    onAddCall: () -> Unit,
+): List<CallAction> {
     val haptics = rememberHaptics()
     val muted = audio?.isMuted == true
     val route = audio?.route ?: CallAudioState.ROUTE_EARPIECE
@@ -791,69 +911,71 @@ private fun Controls(
     val context = LocalContext.current
     val hasRecorder = remember { Recorder.installed(context) }
     val recording by Recorder.state.collectAsState()
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Control(if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (muted) "Muted" else "Mute", muted, MaterialShapes.Cookie6Sided) {
-                haptics.play(if (muted) Haptic.ToggleOff else Haptic.ToggleOn); Calls.mute(!muted)
+    val speaker = route == CallAudioState.ROUTE_SPEAKER
+    val elsewhere = route == CallAudioState.ROUTE_BLUETOOTH || route == CallAudioState.ROUTE_WIRED_HEADSET
+    return listOf(
+        CallAction(CallAction.Kind.Mute, if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic, if (muted) "Muted" else "Mute", muted, MaterialShapes.Cookie6Sided) {
+            haptics.play(if (muted) Haptic.ToggleOff else Haptic.ToggleOn); Calls.mute(!muted)
+        },
+        CallAction(CallAction.Kind.Keypad, Icons.Rounded.Dialpad, "Keypad", false) { haptics.play(Haptic.Tap); onKeypad() },
+        // a tap flips speaker and phone; a watch or earbuds are a long press away
+        CallAction(
+            CallAction.Kind.Speaker,
+            icon = when (route) {
+                CallAudioState.ROUTE_BLUETOOTH -> Icons.Rounded.Bluetooth
+                CallAudioState.ROUTE_WIRED_HEADSET -> Icons.Rounded.Headphones
+                else -> Icons.AutoMirrored.Rounded.VolumeUp
+            },
+            label = if (elsewhere) routeName(audio) else "Speaker",
+            checked = speaker || elsewhere,
+            // the speaker opens into the same sunburst as the face behind the photo
+            on = if (elsewhere) MaterialShapes.Clover4Leaf else MaterialShapes.Sunny,
+            onLongClick = if (hasBluetooth || audio?.supportedRouteMask?.and(CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
+                { haptics.play(Haptic.Hold); onRoutes() }
+            } else null,
+        ) {
+            haptics.play(if (speaker) Haptic.ToggleOff else Haptic.ToggleOn)
+            Calls.route(if (speaker) CallAudioState.ROUTE_EARPIECE else CallAudioState.ROUTE_SPEAKER)
+        },
+        CallAction(
+            CallAction.Kind.Hold, Icons.Rounded.Pause, if (held) "On hold" else "Hold", held, MaterialShapes.Puffy,
+            enabled = call.canHold && others.none { it.phase == Phase.Holding },
+        ) { haptics.play(if (held) Haptic.ToggleOff else Haptic.ToggleOn); Calls.hold(call.call, !held) },
+        CallAction(CallAction.Kind.Add, Icons.Rounded.PersonAdd, "Add call", false, enabled = others.isEmpty()) { haptics.play(Haptic.Tap); onAddCall() },
+        when {
+            call.canMerge && others.isNotEmpty() -> CallAction(CallAction.Kind.Extra, Icons.Rounded.CallMerge, "Merge", false) {
+                haptics.play(Haptic.Success); Calls.merge(call.call)
             }
-            Control(Icons.Rounded.Dialpad, "Keypad", false) { haptics.play(Haptic.Tap); onKeypad() }
-            // a tap flips speaker and phone; a watch or earbuds are a long press away
-            val speaker = route == CallAudioState.ROUTE_SPEAKER
-            val elsewhere = route == CallAudioState.ROUTE_BLUETOOTH || route == CallAudioState.ROUTE_WIRED_HEADSET
-            Control(
-                icon = when (route) {
-                    CallAudioState.ROUTE_BLUETOOTH -> Icons.Rounded.Bluetooth
-                    CallAudioState.ROUTE_WIRED_HEADSET -> Icons.Rounded.Headphones
-                    else -> Icons.AutoMirrored.Rounded.VolumeUp
+            // with one call there's nothing to swap, so the slot records instead when Tring Recorder is installed
+            others.isEmpty() && hasRecorder -> CallAction(
+                CallAction.Kind.Extra,
+                icon = Icons.Rounded.FiberManualRecord,
+                label = when (recording) {
+                    Recorder.State.Recording -> "Recording"
+                    Recorder.State.Starting -> "Starting"
+                    Recorder.State.NeedsSetup -> "Set up"
+                    Recorder.State.Off -> "Record"
                 },
-                label = if (elsewhere) routeName(audio) else "Speaker",
-                checked = speaker || elsewhere,
-                // the speaker opens into the same sunburst as the face behind the photo
-                on = if (elsewhere) MaterialShapes.Clover4Leaf else MaterialShapes.Sunny,
-                onLongClick = if (hasBluetooth || audio?.supportedRouteMask?.and(CallAudioState.ROUTE_WIRED_HEADSET) != 0) {
-                    { haptics.play(Haptic.Hold); onRoutes() }
-                } else null,
+                checked = recording == Recorder.State.Recording,
+                on = MaterialShapes.SoftBurst,
+                pulse = recording == Recorder.State.Recording,
             ) {
-                haptics.play(if (speaker) Haptic.ToggleOff else Haptic.ToggleOn)
-                Calls.route(if (speaker) CallAudioState.ROUTE_EARPIECE else CallAudioState.ROUTE_SPEAKER)
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Control(Icons.Rounded.Pause, if (held) "On hold" else "Hold", held, MaterialShapes.Puffy, enabled = call.canHold && others.none { it.phase == Phase.Holding }) {
-                haptics.play(if (held) Haptic.ToggleOff else Haptic.ToggleOn); Calls.hold(call.call, !held)
-            }
-            Control(Icons.Rounded.PersonAdd, "Add call", false, enabled = others.isEmpty()) { haptics.play(Haptic.Tap); onAddCall() }
-            when {
-                call.canMerge && others.isNotEmpty() -> Control(Icons.Rounded.CallMerge, "Merge", false) { haptics.play(Haptic.Success); Calls.merge(call.call) }
-                // with one call there's nothing to swap, so the slot records instead when Tring Recorder is installed
-                others.isEmpty() && hasRecorder -> Control(
-                    icon = Icons.Rounded.FiberManualRecord,
-                    label = when (recording) {
-                        Recorder.State.Recording -> "Recording"
-                        Recorder.State.Starting -> "Starting"
-                        Recorder.State.NeedsSetup -> "Set up"
-                        Recorder.State.Off -> "Record"
-                    },
-                    checked = recording == Recorder.State.Recording,
-                    on = MaterialShapes.SoftBurst,
-                    pulse = recording == Recorder.State.Recording,
-                ) {
-                    when (recording) {
-                        Recorder.State.NeedsSetup -> { haptics.play(Haptic.Tap); Recorder.openSetup(context) }
-                        Recorder.State.Off -> { haptics.play(Haptic.ToggleOn); Recorder.record(context, call.title, call.number, call.person != null) }
-                        else -> { haptics.play(Haptic.ToggleOff); Recorder.stop(context) }
-                    }
-                }
-                else -> Control(Icons.Rounded.SwapCalls, "Swap", false, enabled = others.any { it.phase == Phase.Holding }) {
-                    haptics.play(Haptic.Segment); Calls.swap()
+                when (recording) {
+                    Recorder.State.NeedsSetup -> { haptics.play(Haptic.Tap); Recorder.openSetup(context) }
+                    Recorder.State.Off -> { haptics.play(Haptic.ToggleOn); Recorder.record(context, call.title, call.number, call.person != null) }
+                    else -> { haptics.play(Haptic.ToggleOff); Recorder.stop(context) }
                 }
             }
-        }
-        Spacer(Modifier.height(32.dp))
-        EndButton(call)
-    }
+            else -> CallAction(CallAction.Kind.Extra, Icons.Rounded.SwapCalls, "Swap", false, enabled = others.any { it.phase == Phase.Holding }) {
+                haptics.play(Haptic.Segment); Calls.swap()
+            }
+        },
+    )
 }
+
+@Composable
+private fun Control(action: CallAction) =
+    Control(action.icon, action.label, action.checked, action.on, action.pulse, action.enabled, action.onLongClick, action.onClick)
 
 private fun routeName(audio: CallAudioState?): String = when (audio?.route) {
     CallAudioState.ROUTE_WIRED_HEADSET -> "Headphones"
@@ -915,7 +1037,7 @@ private fun EndButton(call: CallUi) {
 
 /** a second call: one ringing while you talk, or one waiting on hold */
 @Composable
-private fun OtherCall(other: CallUi, modifier: Modifier = Modifier) {
+internal fun OtherCall(other: CallUi, modifier: Modifier = Modifier) {
     val haptics = rememberHaptics()
     val scheme = MaterialTheme.colorScheme
     Row(
@@ -954,7 +1076,7 @@ private fun SmallRound(icon: ImageVector, color: Color, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SimChooser(call: CallUi) {
+internal fun SimChooser(call: CallUi) {
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val telecom = context.getSystemService(TelecomManager::class.java)

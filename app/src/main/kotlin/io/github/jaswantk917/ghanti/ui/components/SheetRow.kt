@@ -1,7 +1,6 @@
 package io.github.jaswantk917.ghanti.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -50,9 +49,10 @@ fun SheetRow(
     )
     val interaction = remember { MutableInteractionSource() }
     val arrival = remember { Animatable(0f) }
+    val motion = MaterialTheme.motionScheme
     LaunchedEffect(Unit) {
         delay(index * 45L)
-        arrival.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 380f))
+        arrival.animateTo(1f, motion.defaultSpatialSpec())
     }
     Row(
         Modifier

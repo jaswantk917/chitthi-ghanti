@@ -7,7 +7,8 @@ import android.provider.ContactsContract.PhoneLookup
 import android.util.Log
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 
-data class Person(val name: String, val photo: Uri? = null)
+/** [photo]: the small one for faces in lists; [fullPhoto]: the contact's own picture at full size, for the call screen */
+data class Person(val name: String, val photo: Uri? = null, val fullPhoto: Uri? = null)
 
 data class PhoneNumber(val number: String, val label: String)
 
@@ -25,8 +26,8 @@ object Contacts {
         return try {
             context.contentResolver.query(
                 Uri.withAppendedPath(PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number)),
-                arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.PHOTO_THUMBNAIL_URI), null, null, null,
-            )?.use { c -> if (c.moveToFirst()) Person(c.getString(0), c.getString(1)?.let(Uri::parse)) else null }
+                arrayOf(PhoneLookup.DISPLAY_NAME, PhoneLookup.PHOTO_THUMBNAIL_URI, PhoneLookup.PHOTO_URI), null, null, null,
+            )?.use { c -> if (c.moveToFirst()) Person(c.getString(0), c.getString(1)?.let(Uri::parse), c.getString(2)?.let(Uri::parse)) else null }
         } catch (e: SecurityException) {
             Log.w(TAG, "no contacts access", e)
             null

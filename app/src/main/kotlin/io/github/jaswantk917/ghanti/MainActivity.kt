@@ -1,8 +1,5 @@
 package io.github.jaswantk917.ghanti
 
-import io.github.jaswantk917.ghanti.incall.MissedCallReminder
-import io.github.jaswantk917.ghanti.data.AutoRecord
-import io.github.jaswantk917.ghanti.incall.Recorder
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationManager
@@ -40,10 +37,14 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.lifecycleScope
 import io.github.jaswantk917.block.BlockedActivity
 import io.github.jaswantk917.block.SystemBlocks
+import io.github.jaswantk917.ghanti.data.AutoRecord
+import io.github.jaswantk917.ghanti.data.FullPhotos
 import io.github.jaswantk917.ghanti.data.Home
 import io.github.jaswantk917.ghanti.data.RecentRow
 import io.github.jaswantk917.ghanti.data.Recents
 import io.github.jaswantk917.ghanti.data.SpecialCode
+import io.github.jaswantk917.ghanti.incall.MissedCallReminder
+import io.github.jaswantk917.ghanti.incall.Recorder
 import io.github.jaswantk917.ghanti.signals.DeliveryListener
 import io.github.jaswantk917.ghanti.signals.DeliveryRules
 import io.github.jaswantk917.ghanti.signals.Signal
@@ -51,8 +52,6 @@ import io.github.jaswantk917.ghanti.signals.StrangersRing
 import io.github.jaswantk917.ghanti.signals.Strength
 import io.github.jaswantk917.ghanti.ui.home.ExpectingSheet
 import io.github.jaswantk917.ghanti.ui.home.GhantiWelcome
-import io.github.jaswantk917.ghanti.ui.util.Haptic
-import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import io.github.jaswantk917.ghanti.ui.home.HomeActions
 import io.github.jaswantk917.ghanti.ui.home.HomeScreen
 import io.github.jaswantk917.ghanti.ui.home.ImeiSheet
@@ -60,7 +59,9 @@ import io.github.jaswantk917.ghanti.ui.home.KeypadSheet
 import io.github.jaswantk917.ghanti.ui.home.SettingsSheet
 import io.github.jaswantk917.ghanti.ui.home.Setup
 import io.github.jaswantk917.ghanti.ui.theme.GhantiTheme
+import io.github.jaswantk917.ghanti.ui.util.Haptic
 import io.github.jaswantk917.ghanti.ui.util.LocalBlur
+import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,6 +92,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // contacts that only have their small photo: ask Google for the full ones, a few each time
+        FullPhotos.askSome(this)
         MissedCallReminder.seen(this)
         refreshSetup()
         // Play: the call log is read only while this is the phone app

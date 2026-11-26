@@ -8,8 +8,10 @@ import android.telecom.PhoneAccountHandle
 import android.telecom.VideoProfile
 import io.github.jaswantk917.ghanti.GhantiApp
 import io.github.jaswantk917.ghanti.data.Contacts
+import io.github.jaswantk917.ghanti.data.FullPhotos
 import io.github.jaswantk917.ghanti.data.Person
 import io.github.jaswantk917.ghanti.screen.Outcome
+import io.github.jaswantk917.ghanti.ui.incall.CallPhotos
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -76,6 +78,10 @@ object Calls {
         this.context = context.applicationContext
         val number = numberOf(call)
         tracked[call] = number to Contacts.lookup(context, number)
+        // the photo page reads the contact's full photo now, so it's ready when the call screen opens
+        CallPhotos.preload(context, tracked[call]?.second?.fullPhoto)
+        // a contact with only their small photo gets the full one fetched, for their next call
+        if (tracked[call]?.second != null) FullPhotos.askFor(context, number)
         _ended.value = null
         publish()
     }

@@ -18,7 +18,11 @@ data class Settings(
     val callBuzz: Boolean = true,
     /** which calls Tring Recorder starts on by itself once they connect */
     val autoRecord: AutoRecord = AutoRecord.Off,
+    /** the whole call screen's look; Photo only shows for a contact whose own photo is sharp enough */
+    val callStyle: CallStyle = CallStyle.Photo,
 )
+
+enum class CallStyle { Classic, Photo }
 
 enum class AutoRecord {
     Off, Chosen, Strangers, Everyone;
@@ -95,6 +99,7 @@ class Prefs(context: Context) {
         amoled = prefs.getBoolean("amoled", false),
         callBuzz = prefs.getBoolean("call_buzz", true),
         autoRecord = AutoRecord.entries.firstOrNull { it.name == prefs.getString("auto_record", null) } ?: AutoRecord.Off,
+        callStyle = CallStyle.entries.firstOrNull { it.name == prefs.getString("call_style", null) } ?: CallStyle.Photo,
     )
 
     fun update(change: (Settings) -> Settings) {
@@ -108,6 +113,7 @@ class Prefs(context: Context) {
             .putBoolean("amoled", next.amoled)
             .putBoolean("call_buzz", next.callBuzz)
             .putString("auto_record", next.autoRecord.name)
+            .putString("call_style", next.callStyle.name)
             .apply()
         state.value = next
     }

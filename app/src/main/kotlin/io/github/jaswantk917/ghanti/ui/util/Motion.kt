@@ -1,10 +1,10 @@
 package io.github.jaswantk917.ghanti.ui.util
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -21,10 +21,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun Modifier.pressScale(interaction: InteractionSource, pressed: Float = 0.96f): Modifier {
     val isPressed by interaction.collectIsPressedAsState()
+    // Material's fast spatial spring, the one its own buttons press with: in quick, back with a small overshoot
     val scale by animateFloatAsState(
         targetValue = if (isPressed) pressed else 1f,
-        animationSpec = if (isPressed) spring(stiffness = Spring.StiffnessHigh)
-        else spring(dampingRatio = 0.45f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
         label = "press",
     )
     return graphicsLayer { scaleX = scale; scaleY = scale }
