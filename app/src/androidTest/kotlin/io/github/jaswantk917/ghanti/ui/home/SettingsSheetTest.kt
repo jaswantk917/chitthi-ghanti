@@ -109,6 +109,15 @@ class SettingsSheetTest {
     }
 
     @Test
+    fun theBlurSettingSaysWhatItCovers() {
+        show()
+        // the line under the title is the row's lowest part: scrolled to, the whole row is on screen
+        rule.onNodeWithText("Lists melt into the edges", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Use blur").assertIsDisplayed()
+        snap("settings-use-blur")
+    }
+
+    @Test
     fun theColourPillSpringsAcross() {
         show()
         rule.onNodeWithText("Wallpaper").performScrollTo()

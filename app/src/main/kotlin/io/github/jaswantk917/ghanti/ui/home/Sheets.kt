@@ -225,7 +225,7 @@ fun SettingsSheet(
             Section(Icons.Rounded.DarkMode, "AMOLED black", "Pure black backgrounds in dark mode") {
                 Switch(settings.amoled, onCheckedChange = { on -> toggle(on); onChange { it.copy(amoled = on) } })
             }
-            Section(Icons.Rounded.BlurOn, "Blur under the bars", "Lists melt into the edges. Heavy on some phones") {
+            Section(Icons.Rounded.BlurOn, "Use blur", "Lists melt into the edges, and a caller's photo into the call screen. Heavy on some phones", lines = 2) {
                 Switch(settings.blur, onCheckedChange = { on -> toggle(on); onChange { it.copy(blur = on) } })
             }
             Section(Icons.Rounded.Code, "Source code", "Tring is open source, on GitHub") {

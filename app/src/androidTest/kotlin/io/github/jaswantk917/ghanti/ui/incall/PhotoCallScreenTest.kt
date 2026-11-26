@@ -114,6 +114,7 @@ class PhotoCallScreenTest {
         dark: Boolean = false,
         width: Dp? = null,
         style: CallStyle = CallStyle.Photo,
+        blur: Boolean = false,
     ) {
         rule.runOnUiThread {
             // the phone may lock mid-run; the test screen shows over it and keeps the screen on while it's up
@@ -130,7 +131,7 @@ class PhotoCallScreenTest {
             }
             CompositionLocalProvider(LocalConfiguration provides config) {
                 GhantiTheme(amoled = false) {
-                    CompositionLocalProvider(LocalBlur provides false) {
+                    CompositionLocalProvider(LocalBlur provides blur) {
                         Box(if (width != null) Modifier.requiredWidth(width) else Modifier) {
                             InCallScreen(call, others, audio, endedAt, noting = false, onNoting = {}, onAddCall = {}, style = style, locked = locked)
                         }
@@ -308,6 +309,19 @@ class PhotoCallScreenTest {
     fun aGreyPhotoGivesAQuietPage() {
         show(call(Phase.Ringing, grey()))
         snap("photo-incoming-grey")
+    }
+
+    @Test
+    fun onAPixelThePhotoGoesSoftBeforeThePage() {
+        show(call(Phase.Active, warm()), blur = true)
+        rule.onNodeWithText("Ravi Kumar").assertIsDisplayed()
+        snap("photo-blur-talking")
+    }
+
+    @Test
+    fun onAPixelAtNightRinging() {
+        show(call(Phase.Ringing, warm()), dark = true, blur = true)
+        snap("photo-blur-night-ringing")
     }
 
     @Test

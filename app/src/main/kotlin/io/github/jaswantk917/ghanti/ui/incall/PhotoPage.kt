@@ -64,12 +64,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.blur.BlurRadiusSpec
+import androidx.compose.ui.graphics.blur.BlurStop
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -86,15 +89,16 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import io.github.jaswantk917.ghanti.incall.CallUi
 import io.github.jaswantk917.ghanti.incall.Calls
 import io.github.jaswantk917.ghanti.incall.Phase
 import io.github.jaswantk917.ghanti.ui.components.pressMorph
 import io.github.jaswantk917.ghanti.ui.util.Haptic
+import io.github.jaswantk917.ghanti.ui.util.LocalBlur
 import io.github.jaswantk917.ghanti.ui.util.pressScale
 import io.github.jaswantk917.ghanti.ui.util.rememberHaptics
 import kotlin.math.min
+import kotlinx.coroutines.launch
 
 /**
  * The photo page: the contact's own photo across the top, fading into a colour taken from it, their
@@ -252,27 +256,33 @@ private val LOCKED_HEIGHT = 48.dp + 20.dp + 88.dp
 @Composable
 private fun Hero(photo: CallPhoto, scale: Float, colour: Float, alpha: Float) {
     val page = MaterialTheme.colorScheme.surface
+    // where the phone can blur (Pixels, by default), the photo's lower half goes soft before it turns into the
+    // page, the way the lists melt under Ghanti's header; elsewhere the colour alone fades it
+    val blur = LocalBlur.current
     Box(Modifier.fillMaxSize().graphicsLayer { clip = true; this.alpha = alpha }) {
-        Image(
-            photo.image,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            colorFilter = if (colour < 1f) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(colour) }) else null,
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                // faces sit a little above the middle of a contact photo
-                transformOrigin = TransformOrigin(0.5f, 0.4f)
-            },
-        )
-        // the photo melts into the page; most of the change happens late, so the face stays clear
+        Box(if (blur) Modifier.fillMaxSize().melt() else Modifier.fillMaxSize()) {
+            Image(
+                photo.image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                colorFilter = if (colour < 1f) ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(colour) }) else null,
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    // faces sit a little above the middle of a contact photo
+                    transformOrigin = TransformOrigin(0.5f, 0.4f)
+                },
+            )
+        }
+        // the photo melts into the page; most of the change happens late, so the face stays clear. With the blur
+        // doing part of the work, the colour can come in lighter, so more of the soft photo shows through
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
                     0.5f to Color.Transparent,
-                    0.72f to page.copy(alpha = 0.45f),
-                    0.88f to page.copy(alpha = 0.86f),
+                    0.72f to page.copy(alpha = if (blur) 0.3f else 0.45f),
+                    0.88f to page.copy(alpha = if (blur) 0.78f else 0.86f),
                     1f to page,
                 ),
             ),
@@ -283,6 +293,19 @@ private fun Hero(photo: CallPhoto, scale: Float, colour: Float, alpha: Float) {
         )
     }
 }
+
+/** sharp down past the middle, then softer and softer: eased in, so the chin stays crisp and the bottom is a haze */
+private fun Modifier.melt() = blur {
+    blurRadiusSpec = BlurRadiusSpec.verticalGradient(
+        listOf(BlurStop(0f, 0.dp), BlurStop(MELT_FROM, 0.dp)) +
+            listOf(0.2f, 0.4f, 0.6f, 0.8f, 1f).map { f -> BlurStop(MELT_FROM + (1f - MELT_FROM) * f, (MELT_RADIUS * f * f * f).dp) },
+    )
+}
+
+// the face sits around 40% down a contact photo and the chin near 65%: the blur starts at half and is
+// still under 2 dp at the chin
+private const val MELT_FROM = 0.5f
+private const val MELT_RADIUS = 36f
 
 /** the button block's sizes from its width: three columns of pills on the left, a big circle on the right */
 private class Sizes(val big: Dp, val pill: Dp, val tall: Dp, val small: Dp, val gap: Dp, val column: Dp)
