@@ -41,6 +41,9 @@ class RecordingsProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         checkCaller()
         if (method == "silenced" && arg != null) return Bundle().also { Screening.keptQuiet(arg) }
+        if (method == "describe" && arg != null) {
+            return Bundle().also { Callers.describe(requireContext(), arg, extras?.getString("label").orEmpty(), extras?.getBoolean("confirmed") == true) }
+        }
         if (method != "screen" || arg == null) return null
         val taking = Screening.expect(requireContext(), arg, extras?.getBoolean("stranger") == true)
         return Bundle().apply { putBoolean("taking", taking) }

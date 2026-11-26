@@ -40,7 +40,7 @@ object Recordings {
                 found += Recording(
                     id = id,
                     uri = ContentUris.withAppendedId(collection, id),
-                    who = who(cursor.getString(1).orEmpty()),
+                    who = Callers.name(context, id, who(cursor.getString(1).orEmpty())),
                     at = cursor.getLong(2) * 1_000,
                     durationMs = cursor.getLong(3),
                 )

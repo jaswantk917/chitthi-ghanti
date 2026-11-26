@@ -48,7 +48,11 @@ class CallRecorder : AccessibilityService() {
 
     private val commands = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.getBooleanExtra(EXTRA_ON, false)) start(intent.getStringExtra(EXTRA_WHO).orEmpty()) else stop()
+            if (intent.getBooleanExtra(EXTRA_ON, false)) {
+                start(intent.getStringExtra(EXTRA_WHO).orEmpty(), intent.getStringExtra(EXTRA_NUMBER).orEmpty(), intent.getBooleanExtra(EXTRA_SAVED, true))
+            } else {
+                stop()
+            }
         }
     }
 
@@ -79,7 +83,7 @@ class CallRecorder : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
-    private fun start(who: String) {
+    private fun start(who: String, number: String, saved: Boolean) {
         if (take != null) return report(STATE_RECORDING)
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return report(STATE_NEEDS_SETUP)
         if (audio.mode != AudioManager.MODE_IN_CALL && audio.mode != AudioManager.MODE_IN_COMMUNICATION) return report(STATE_OFF)
@@ -94,6 +98,7 @@ class CallRecorder : AccessibilityService() {
         var output: ParcelFileDescriptor? = null
         try {
             uri = contentResolver.insert(MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) ?: return report(STATE_OFF)
+            Callers.remember(this, ContentUris.parseId(uri), number, saved)
             output = contentResolver.openFileDescriptor(uri, "w") ?: error("no file for $uri")
             // the app's own folder on shared storage, readable over USB: the last call's raw sound and the per-call numbers;
             // each call has its own scratch file, since the last one can still be mixing down
@@ -241,6 +246,8 @@ class CallRecorder : AccessibilityService() {
         const val ACTION_STATE = "io.github.jaswantk917.tring.RECORDING"
         const val EXTRA_ON = "on"
         const val EXTRA_WHO = "who"
+        const val EXTRA_NUMBER = "number"
+        const val EXTRA_SAVED = "saved"
         const val EXTRA_STATE = "state"
         const val STATE_RECORDING = "recording"
         const val STATE_OFF = "off"

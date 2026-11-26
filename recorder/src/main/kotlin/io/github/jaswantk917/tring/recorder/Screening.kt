@@ -48,7 +48,7 @@ object Screening {
 
     data class Live(val who: String, val stage: Stage, val words: String = "", val reason: String? = null, val saved: Boolean = false)
 
-    private class Active(val service: ScreenService, val call: Call, val who: String, val voicemail: Boolean = false) {
+    private class Active(val service: ScreenService, val call: Call, val who: String, val number: String, val saved: Boolean, val voicemail: Boolean = false) {
         var hearing: Hearing? = null
         var job: Job? = null
         var wake: PowerManager.WakeLock? = null
@@ -160,7 +160,8 @@ object Screening {
         expected = null
         @Suppress("DEPRECATION")
         if (call.state != Call.STATE_RINGING || active != null) return
-        val screening = Active(service, call, from.ifBlank { "Private number" })
+        val contact = call.details.contactDisplayName?.takeIf { it.isNotBlank() }
+        val screening = Active(service, call, Callers.live(service, from, contact), from, saved = contact != null)
         active = screening
         call.registerCallback(callback)
         if (!enter(call)) {
@@ -195,8 +196,8 @@ object Screening {
         if (!voicemailOn(service) || !canRun(service)) return
         Processor.get(service).yieldToCall()
         val from = call.details.handle?.schemeSpecificPart.orEmpty()
-        val who = call.details.contactDisplayName?.takeIf { it.isNotBlank() } ?: from.ifBlank { "Private number" }
-        val message = Active(service, call, who, voicemail = true)
+        val contact = call.details.contactDisplayName?.takeIf { it.isNotBlank() }
+        val message = Active(service, call, Callers.live(service, from, contact), from, saved = contact != null, voicemail = true)
         active = message
         call.registerCallback(callback)
         if (!enter(call)) {
@@ -369,7 +370,7 @@ object Screening {
         if (keep) {
             val sound = synchronized(a.heard) { a.heard.toByteArray() }
             val context = a.service.applicationContext
-            thread(name = "screen-message") { runCatching { Voicemail.save(context, a.who, sound, words) }.onFailure { Log.w(TAG, "couldn't save the message", it) } }
+            thread(name = "screen-message") { runCatching { Voicemail.save(context, if (a.saved) a.who else a.number.ifBlank { "Private number" }, a.number, a.saved, sound, words) }.onFailure { Log.w(TAG, "couldn't save the message", it) } }
         }
         main.postDelayed({ if (active == null) _live.value = null }, ENDED_SHOWN_MS)
     }

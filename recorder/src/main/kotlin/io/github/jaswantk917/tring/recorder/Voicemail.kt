@@ -19,7 +19,7 @@ import java.util.Locale
 
 /** What a caller said, screened or let ring, kept like a recording, with a note saying who and what. */
 object Voicemail {
-    fun save(context: Context, who: String, pcm: ByteArray, words: String) {
+    fun save(context: Context, who: String, number: String, saved: Boolean, pcm: ByteArray, words: String) {
         val resolver = context.contentResolver
         val stamp = SimpleDateFormat("d MMM, h.mm a", Locale.getDefault()).format(Date())
         val values = ContentValues().apply {
@@ -51,6 +51,7 @@ object Voicemail {
         }
         resolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
         val id = ContentUris.parseId(uri)
+        Callers.remember(context, id, number, saved)
         Notes(context).apply {
             // no words: the transcriber has another go at the sound when the app opens
             if (words.isNotBlank()) saveTranscript(id, listOf(Line(null, 0, words)))

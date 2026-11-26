@@ -16,8 +16,8 @@ android {
         applicationId = "io.github.jaswantk917.tring.recorder"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 14
-        versionName = "1.13"
+        versionCode = 15
+        versionName = "1.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Shruti's engine comes prebuilt for arm64 only; its C++ brings no runtime of its own
         ndk { abiFilters += "arm64-v8a" }
